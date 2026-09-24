@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     container_name: postgres_food
     environment:
       POSTGRES_DB: food_delivery_db
@@ -10,9 +10,9 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "5433:5432"
+      - "5439:5432"
     volumes:
-      - postgres_data_v2:/var/lib/postgresql/data
+      - postgres_data_17:/var/lib/postgresql/data
     networks:
       - food_network
 
@@ -60,7 +60,7 @@ services:
       - riak1
 
 volumes:
-  postgres_data_v2:
+  postgres_data_17:
 
 
 networks:
