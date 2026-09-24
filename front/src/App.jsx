@@ -29,6 +29,7 @@ import {
 import { API_URL, api } from './api'
 
 const STORAGE_KEY = 'food-delivery-operator-session'
+const UI_STORAGE_KEY = 'food-delivery-operator-ui'
 const noticePresets = [
   'Ваш заказ задерживается на 10 минут',
   'Курьер прибыл в ресторан',
@@ -40,6 +41,14 @@ function readStoredSession() {
     return JSON.parse(localStorage.getItem(STORAGE_KEY))
   } catch {
     return null
+  }
+}
+
+function readStoredUi() {
+  try {
+    return JSON.parse(localStorage.getItem(UI_STORAGE_KEY)) || {}
+  } catch {
+    return {}
   }
 }
 
@@ -68,17 +77,18 @@ function roleLabel(role) {
 }
 
 function App() {
+  const [storedUi] = useState(readStoredUi)
   const [session, setSession] = useState(readStoredSession)
   const [username, setUsername] = useState('operator1')
   const [remaining, setRemaining] = useState(0)
   const [users, setUsers] = useState([])
-  const [selectedId, setSelectedId] = useState(null)
+  const [selectedId, setSelectedId] = useState(storedUi.selectedId ?? null)
   const [profile, setProfile] = useState(null)
   const [history, setHistory] = useState([])
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(storedUi.query ?? '')
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({ fullName: '', phone: '', deliveryAddress: '' })
-  const [notification, setNotification] = useState({ message: '', type: 'INFO' })
+  const [notification, setNotification] = useState(storedUi.notification ?? { message: '', type: 'INFO' })
   const [loading, setLoading] = useState({ users: true, profile: false, history: false, auth: false, action: false })
   const [toast, setToast] = useState(null)
   const [apiOffline, setApiOffline] = useState(false)
@@ -157,11 +167,12 @@ function App() {
   }, [selectedId, loadHistory, loadProfile])
 
   useEffect(() => {
-    if (!session?.token) return
-    api.session(session.token).then((status) => {
-      setSession((current) => ({ ...current, ...status }))
-    }).catch(clearSession)
-  }, []) // validate a restored token once
+    localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({
+      selectedId,
+      query,
+      notification,
+    }))
+  }, [selectedId, query, notification])
 
   useEffect(() => {
     if (!session?.expiresAt) return
