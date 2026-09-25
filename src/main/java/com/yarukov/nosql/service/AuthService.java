@@ -20,14 +20,11 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final RiakService riakService;
-
-    // Время жизни временной сессии оператора (15 минут)
     private static final Duration SESSION_TTL = Duration.ofMinutes(15);
 
     public LoginResponse login(LoginRequest request) {
         User user = userRepository.findByUsername(request.getUsername())
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
-
         if (!"OPERATOR".equalsIgnoreCase(user.getRole())) {
             throw new RuntimeException("Доступ разрешен только операторам");
         }
@@ -44,7 +41,6 @@ public class AuthService {
                 .expiresAt(expiresAt)
                 .build();
 
-        // Сохраняем сессию в Riak KV
         riakService.saveSession(session);
 
         return LoginResponse.builder()

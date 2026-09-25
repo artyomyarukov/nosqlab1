@@ -21,7 +21,7 @@ public class RiakConfig {
     private RiakCluster cluster;
 
     @Bean
-    public RiakClient riakClient() throws UnknownHostException {
+    public RiakClient riakClient() {
         List<RiakNode> nodes = new ArrayList<>();
         String[] nodeAddresses = riakNodesConfig.split(",");
         for (String address : nodeAddresses) {

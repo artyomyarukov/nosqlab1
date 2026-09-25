@@ -34,21 +34,19 @@ public class RiakService {
     private final RiakClient riakClient;
     private ObjectMapper objectMapper;
 
-    // Имена пространств имен (Bucket-типы и корзины)
+    // Bucket-types and bucket
     private static final Namespace SESSIONS_NS = new Namespace("default", "operator_sessions");
     private static final Namespace PROFILES_NS = new Namespace("default", "cached_profiles");
     private static final Namespace HISTORY_NS = new Namespace("default", "action_history");
-    private static final Namespace COUNTERS_NS = new Namespace("counters", "page_visits"); // CRDT счетчик!
+    private static final Namespace COUNTERS_NS = new Namespace("counters", "page_visits");
 
     @PostConstruct
     public void init() {
         this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule()); // Для корректной работы с Instant / LocalDateTime
+        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
-    // =========================================================================
-    // 1. ВРЕМЕННОЕ ХРАНЕНИЕ: Сессии с Application-Level Expiration (TTL)
-    // =========================================================================
+
 
     public void saveSession(UserSession session) {
         try {
@@ -71,21 +69,16 @@ public class RiakService {
             Location location = new Location(SESSIONS_NS, token);
             FetchValue fetch = new FetchValue.Builder(location).build();
             FetchValue.Response response = riakClient.execute(fetch);
-
             if (response.isNotFound()) {
                 return Optional.empty();
             }
-
             RiakObject obj = response.getValue(RiakObject.class);
             UserSession session = objectMapper.readValue(obj.getValue().getValue(), UserSession.class);
-
-            // ПРОВЕРКА TTL НА УРОВНЕ ПРИЛОЖЕНИЯ (Application-Level Expiration)
             if (session.isExpired()) {
-                log.warn("Сессия с токеном {} истекла (TTL просрочен). Удаляем из Riak...", token);
+                log.warn("Сессия с токеном {} истекла (TTL просрочен).", token);
                 deleteSession(token);
                 return Optional.empty();
             }
-
             return Optional.of(session);
         } catch (Exception e) {
             log.error("Ошибка при чтении сессии из Riak", e);
@@ -104,9 +97,6 @@ public class RiakService {
         }
     }
 
-    // =========================================================================
-    // 2. КЭШИРОВАНИЕ: Профиль пользователя
-    // =========================================================================
 
     public void cacheUserProfile(CachedUserProfile profile) {
         try {
@@ -148,7 +138,7 @@ public class RiakService {
             Location location = new Location(PROFILES_NS, String.valueOf(userId));
             DeleteValue delete = new DeleteValue.Builder(location).build();
             riakClient.execute(delete);
-            log.info("Кэш профиля пользователя id={} удален (инвалидирован) из Riak", userId);
+            log.info("Кэш профиля пользователя id={} удален из Riak", userId);
         } catch (Exception e) {
             log.error("Ошибка при инвалидации кэша в Riak", e);
         }
@@ -180,14 +170,12 @@ public class RiakService {
         }
     }
 
-    // =========================================================================
-    // 4. ОБЯЗАТЕЛЬНЫЙ СЦЕНАРИЙ: История действий пользователя
-    // =========================================================================
+
 
     public void addActionToHistory(Long userId, ActionEvent event) {
         try {
             List<ActionEvent> history = getActionHistory(userId);
-            history.add(0, event); // Добавляем самое свежее событие в начало списка
+            history.add(0, event);
 
             String json = objectMapper.writeValueAsString(history);
             Location location = new Location(HISTORY_NS, String.valueOf(userId));
@@ -208,11 +196,9 @@ public class RiakService {
             Location location = new Location(HISTORY_NS, String.valueOf(userId));
             FetchValue fetch = new FetchValue.Builder(location).build();
             FetchValue.Response response = riakClient.execute(fetch);
-
             if (response.isNotFound()) {
                 return new ArrayList<>();
             }
-
             RiakObject obj = response.getValue(RiakObject.class);
             return objectMapper.readValue(obj.getValue().getValue(), new TypeReference<List<ActionEvent>>() {});
         } catch (Exception e) {

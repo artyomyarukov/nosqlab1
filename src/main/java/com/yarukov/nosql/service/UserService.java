@@ -24,7 +24,7 @@ public class UserService {
     private final RiakService riakService;
     private final AuthService authService;
 
-    // Список клиентов и курьеров
+
     public List<UserListItemResponse> getAllUsers() {
         return userRepository.findAll().stream()
                 .filter(u -> !"OPERATOR".equalsIgnoreCase(u.getRole()))
@@ -37,15 +37,10 @@ public class UserService {
                 .collect(Collectors.toList());
     }
 
-    // Просмотр профиля: КЭШ + АТОМАРНЫЙ СЧЕТЧИК
     public UserProfileResponse getUserProfile(Long userId) {
-        // 1. Атомарно увеличиваем счётчик просмотров страницы (CRDT в Riak)
         riakService.incrementVisitCount(userId);
         long visitCount = riakService.getVisitCount(userId);
-
-        // 2. Проверяем кэш в Riak KV
         Optional<CachedUserProfile> cachedOpt = riakService.getCachedUserProfile(userId);
-
         if (cachedOpt.isPresent()) {
             log.info("CACHE HIT: Профиль пользователя id={} получен из Riak KV", userId);
             CachedUserProfile cached = cachedOpt.get();
@@ -61,12 +56,10 @@ public class UserService {
                     .build();
         }
 
-        // 3. CACHE MISS: Достаем из PostgreSQL
-        log.info("CACHE MISS: Профиль пользователя id={} загружается из PostgreSQL...", userId);
+        log.info("CACHE MISS: Профиль пользователя id={} загружается из PostgreSQL", userId);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Пользователь с id=" + userId + " не найден"));
 
-        // 4. Кладём в кэш Riak KV
         CachedUserProfile toCache = CachedUserProfile.builder()
                 .id(user.getId())
                 .username(user.getUsername())
@@ -90,10 +83,8 @@ public class UserService {
                 .build();
     }
 
-    // Редактирование профиля: инвалидация кэша + запись в историю
     public UserProfileResponse updateUserProfile(Long userId, UpdateUserRequest request, String token) {
         UserSession session = authService.getActiveSessionOrThrow(token);
-
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
 
@@ -103,10 +94,7 @@ public class UserService {
 
         userRepository.save(user);
 
-        // Инвалидируем кэш в Riak KV
         riakService.evictUserProfile(userId);
-
-        // Записываем событие в историю действий в Riak KV
         riakService.addActionToHistory(userId, ActionEvent.builder()
                 .timestamp(Instant.now())
                 .action("PROFILE_UPDATED")
@@ -117,7 +105,6 @@ public class UserService {
         return getUserProfile(userId);
     }
 
-    // Отправка уведомления (логирование в историю действий Riak KV)
     public NotificationResponse sendNotification(Long userId, NotificationRequest request, String token) {
         UserSession session = authService.getActiveSessionOrThrow(token);
 
@@ -125,8 +112,6 @@ public class UserService {
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
 
         Instant now = Instant.now();
-
-        // Логируем действие в Riak KV (обязательный сценарий)
         riakService.addActionToHistory(userId, ActionEvent.builder()
                 .timestamp(now)
                 .action("NOTIFICATION_SENT [" + request.getType() + "]")
@@ -144,7 +129,6 @@ public class UserService {
                 .build();
     }
 
-    // Просмотр истории действий (Обязательный сценарий)
     public List<ActionEvent> getUserActionHistory(Long userId) {
         return riakService.getActionHistory(userId);
     }

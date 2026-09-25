@@ -17,8 +17,6 @@ public class DataInitializer implements CommandLineRunner {
     @Override
     public void run(String... args) {
         if (userRepository.count() == 0) {
-            log.info("База данных пуста. Создаем тестовых пользователей для сервиса доставки...");
-
             userRepository.save(User.builder()
                     .username("operator1")
                     .fullName("Алексей Операторов")
@@ -43,7 +41,7 @@ public class DataInitializer implements CommandLineRunner {
                     .role("COURIER")
                     .build());
 
-            log.info("Тестовые пользователи успешно добавлены в PostgreSQL!");
+            log.info("Тестовые пользователи успешно добавлены в PostgreSQL");
         }
     }
 }
