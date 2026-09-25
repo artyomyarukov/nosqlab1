@@ -1,0 +1,73 @@
+### =========================================================================
+
+GET http://localhost:8080/api/users
+
+### =========================================================================
+
+GET http://localhost:8080/api/users/2
+
+### =========================================================================
+
+GET http://localhost:8080/api/users/2
+
+### =========================================================================
+
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "operator1"
+}
+
+> {%
+    client.global.set("auth_token", response.body.token);
+    client.log("Сохранен токен сессии: " + response.body.token);
+%}
+
+### =========================================================================
+
+GET http://localhost:8080/api/auth/session
+X-Session-Token: c51fe296-f3e9-4bbd-b1c5-b042c7d70cf6
+
+### =========================================================================
+
+POST http://localhost:8080/api/users/2/notify
+Content-Type: application/json
+X-Session-Token: c51fe296-f3e9-4bbd-b1c5-b042c7d70cf6
+
+{
+  "message": "Ваш заказ задерживается на 10 минут из-за пробок",
+  "type": "WARNING"
+}
+
+### =========================================================================
+
+GET http://localhost:8080/api/users/2/history
+
+### =========================================================================
+
+
+PUT http://localhost:8080/api/users/2
+Content-Type: application/json
+X-Session-Token: {{auth_token}}
+
+{
+  "fullName": "Иван Кузнецов",
+  "phone": "+7-999-777-88-99",
+  "deliveryAddress": "г. Москва, ул. Арбат, д. 10, кв. 5"
+}
+
+### =========================================================================
+### 9. Проверка инвалидации кэша после редактирования
+
+GET http://localhost:8080/api/users/2
+
+### =========================================================================
+
+POST http://localhost:8080/api/auth/logout
+X-Session-Token: {{auth_token}}
+
+### =========================================================================
+
+GET http://localhost:8080/api/auth/session
+X-Session-Token: {{auth_token}}
