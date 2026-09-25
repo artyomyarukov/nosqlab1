@@ -17,7 +17,6 @@ public class UserProfileResponse {
     private String deliveryAddress;
     private String role;
 
-    // Поля для демонстрации работы Riak KV преподавателю:
-    private boolean fromCache;  // Взято из Riak (true) или из Postgres (false)
-    private long visitCount;    // Атомарный счетчик просмотров из Riak
+    private boolean fromCache;
+    private long visitCount;
 }
