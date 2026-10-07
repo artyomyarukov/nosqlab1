@@ -1,24 +1,16 @@
 package com.yarukov.nosql.controller;
 
 import com.yarukov.nosql.dto.LoginRequest;
-import com.yarukov.nosql.dto.LoginResponse;
 import com.yarukov.nosql.dto.SessionStatusResponse;
-import com.yarukov.nosql.model.entity.User;
-import com.yarukov.nosql.model.riak.UserSession;
-import com.yarukov.nosql.repository.jpa.UserRepository;
 import com.yarukov.nosql.service.AuthService;
-import com.yarukov.nosql.service.RiakService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Map;
-import java.util.UUID;
+
 
 @Slf4j
 @RestController

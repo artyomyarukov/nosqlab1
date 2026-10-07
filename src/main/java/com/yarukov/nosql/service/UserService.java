@@ -1,5 +1,8 @@
 package com.yarukov.nosql.service;
 
+import com.yarukov.nosql.dao.ActionHistoryDao;
+import com.yarukov.nosql.dao.CounterDao;
+import com.yarukov.nosql.dao.UserCacheDao;
 import com.yarukov.nosql.dto.*;
 import com.yarukov.nosql.model.entity.User;
 import com.yarukov.nosql.model.riak.ActionEvent;
@@ -21,9 +24,12 @@ import java.util.stream.Collectors;
 public class UserService {
 
     private final UserRepository userRepository;
-    private final RiakService riakService;
     private final AuthService authService;
 
+    // Внедряем наши DAO из пакета dao:
+    private final UserCacheDao userCacheDao;
+    private final CounterDao counterDao;
+    private final ActionHistoryDao actionHistoryDao;
 
     public List<UserListItemResponse> getAllUsers() {
         return userRepository.findAll().stream()
@@ -38,9 +44,13 @@ public class UserService {
     }
 
     public UserProfileResponse getUserProfile(Long userId) {
-        riakService.incrementVisitCount(userId);
-        long visitCount = riakService.getVisitCount(userId);
-        Optional<CachedUserProfile> cachedOpt = riakService.getCachedUserProfile(userId);
+        // 1. Счётчик посещений
+        counterDao.increment(userId);
+        long visitCount = counterDao.getCount(userId);
+
+        // 2. Кэш профиля
+        Optional<CachedUserProfile> cachedOpt = userCacheDao.findById(userId);
+
         if (cachedOpt.isPresent()) {
             log.info("CACHE HIT: Профиль пользователя id={} получен из Riak KV", userId);
             CachedUserProfile cached = cachedOpt.get();
@@ -56,7 +66,8 @@ public class UserService {
                     .build();
         }
 
-        log.info("CACHE MISS: Профиль пользователя id={} загружается из PostgreSQL", userId);
+        // 3. Загрузка из Postgres
+        log.info("CACHE MISS: Профиль пользователя id={} загружается из PostgreSQL...", userId);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Пользователь с id=" + userId + " не найден"));
 
@@ -69,7 +80,7 @@ public class UserService {
                 .role(user.getRole())
                 .cachedAt(Instant.now())
                 .build();
-        riakService.cacheUserProfile(toCache);
+        userCacheDao.save(toCache);
 
         return UserProfileResponse.builder()
                 .id(user.getId())
@@ -85,6 +96,7 @@ public class UserService {
 
     public UserProfileResponse updateUserProfile(Long userId, UpdateUserRequest request, String token) {
         UserSession session = authService.getActiveSessionOrThrow(token);
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
 
@@ -94,8 +106,11 @@ public class UserService {
 
         userRepository.save(user);
 
-        riakService.evictUserProfile(userId);
-        riakService.addActionToHistory(userId, ActionEvent.builder()
+        // Инвалидация кэша
+        userCacheDao.deleteById(userId);
+
+        // Запись в историю
+        actionHistoryDao.add(userId, ActionEvent.builder()
                 .timestamp(Instant.now())
                 .action("PROFILE_UPDATED")
                 .operator(session.getOperatorName())
@@ -112,15 +127,15 @@ public class UserService {
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
 
         Instant now = Instant.now();
-        riakService.addActionToHistory(userId, ActionEvent.builder()
+
+        actionHistoryDao.add(userId, ActionEvent.builder()
                 .timestamp(now)
                 .action("NOTIFICATION_SENT [" + request.getType() + "]")
                 .operator(session.getOperatorName())
                 .details(request.getMessage())
                 .build());
 
-        log.info("Уведомление оператором '{}' отправлено пользователю '{}': {}",
-                session.getOperatorName(), user.getUsername(), request.getMessage());
+        log.info("Уведомление отправлено пользователю '{}': {}", user.getUsername(), request.getMessage());
 
         return NotificationResponse.builder()
                 .status("SENT")
@@ -130,6 +145,6 @@ public class UserService {
     }
 
     public List<ActionEvent> getUserActionHistory(Long userId) {
-        return riakService.getActionHistory(userId);
+        return actionHistoryDao.findByUserId(userId);
     }
 }

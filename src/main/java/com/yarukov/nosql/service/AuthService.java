@@ -1,5 +1,6 @@
 package com.yarukov.nosql.service;
 
+import com.yarukov.nosql.dao.SessionDao;
 import com.yarukov.nosql.dto.LoginRequest;
 import com.yarukov.nosql.dto.LoginResponse;
 import com.yarukov.nosql.dto.SessionStatusResponse;
@@ -19,12 +20,14 @@ import java.util.UUID;
 public class AuthService {
 
     private final UserRepository userRepository;
-    private final RiakService riakService;
+    private final SessionDao sessionDao;
+
     private static final Duration SESSION_TTL = Duration.ofMinutes(15);
 
     public LoginResponse login(LoginRequest request) {
         User user = userRepository.findByUsername(request.getUsername())
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+
         if (!"OPERATOR".equalsIgnoreCase(user.getRole())) {
             throw new RuntimeException("Доступ разрешен только операторам");
         }
@@ -41,7 +44,7 @@ public class AuthService {
                 .expiresAt(expiresAt)
                 .build();
 
-        riakService.saveSession(session);
+        sessionDao.save(session);
 
         return LoginResponse.builder()
                 .token(token)
@@ -52,13 +55,10 @@ public class AuthService {
 
     public SessionStatusResponse validateSession(String token) {
         if (token == null || token.isBlank()) {
-            return SessionStatusResponse.builder()
-                    .active(false)
-                    .message("Токен не передан")
-                    .build();
+            return SessionStatusResponse.builder().active(false).message("Токен не передан").build();
         }
 
-        Optional<UserSession> sessionOpt = riakService.getSession(token);
+        Optional<UserSession> sessionOpt = sessionDao.findByToken(token);
 
         if (sessionOpt.isPresent()) {
             UserSession session = sessionOpt.get();
@@ -69,21 +69,18 @@ public class AuthService {
                     .message("Сессия активна")
                     .build();
         } else {
-            return SessionStatusResponse.builder()
-                    .active(false)
-                    .message("Сессия истекла или не найдена")
-                    .build();
+            return SessionStatusResponse.builder().active(false).message("Сессия истекла или не найдена").build();
         }
     }
 
     public void logout(String token) {
         if (token != null) {
-            riakService.deleteSession(token);
+            sessionDao.deleteByToken(token);
         }
     }
 
     public UserSession getActiveSessionOrThrow(String token) {
-        return riakService.getSession(token)
+        return sessionDao.findByToken(token)
                 .orElseThrow(() -> new RuntimeException("Неавторизован: сессия истекла или не существует"));
     }
 }
