@@ -26,7 +26,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final AuthService authService;
 
-    // Внедряем наши DAO из пакета dao:
+
     private final UserCacheDao userCacheDao;
     private final CounterDao counterDao;
     private final ActionHistoryDao actionHistoryDao;
@@ -44,11 +44,10 @@ public class UserService {
     }
 
     public UserProfileResponse getUserProfile(Long userId) {
-        // 1. Счётчик посещений
+
         counterDao.increment(userId);
         long visitCount = counterDao.getCount(userId);
 
-        // 2. Кэш профиля
         Optional<CachedUserProfile> cachedOpt = userCacheDao.findById(userId);
 
         if (cachedOpt.isPresent()) {
@@ -66,8 +65,6 @@ public class UserService {
                     .build();
         }
 
-        // 3. Загрузка из Postgres
-        log.info("CACHE MISS: Профиль пользователя id={} загружается из PostgreSQL...", userId);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Пользователь с id=" + userId + " не найден"));
 
@@ -106,10 +103,10 @@ public class UserService {
 
         userRepository.save(user);
 
-        // Инвалидация кэша
+
         userCacheDao.deleteById(userId);
 
-        // Запись в историю
+
         actionHistoryDao.add(userId, ActionEvent.builder()
                 .timestamp(Instant.now())
                 .action("PROFILE_UPDATED")
