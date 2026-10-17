@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     container_name: postgres_food
     environment:
       POSTGRES_DB: food_delivery_db
@@ -10,37 +10,34 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "5433:5432"
+      - "5439:5432"
     volumes:
-      - postgres_data_v2:/var/lib/postgresql/data
+      - postgres_data_17:/var/lib/postgresql/data
     networks:
-      - food_network
+      food_network:
+        ipv4_address: 172.23.0.10
 
   riak1:
     image: basho/riak-kv
     container_name: riak1
     hostname: riak1
-    environment:
-      - CLUSTER_NAME=riak_cluster
-      - RIAK_NODE_NAME=riak@riak1
     ports:
       - "8087:8087"
       - "8098:8098"
     networks:
-      - food_network
+      food_network:
+        ipv4_address: 172.23.0.11
 
   riak2:
     image: basho/riak-kv
     container_name: riak2
     hostname: riak2
-    environment:
-      - CLUSTER_NAME=riak_cluster
-      - RIAK_NODE_NAME=riak@riak2
     ports:
       - "8088:8087"
       - "8099:8098"
     networks:
-      - food_network
+      food_network:
+        ipv4_address: 172.23.0.12
     depends_on:
       - riak1
 
@@ -48,21 +45,21 @@ services:
     image: basho/riak-kv
     container_name: riak3
     hostname: riak3
-    environment:
-      - CLUSTER_NAME=riak_cluster
-      - RIAK_NODE_NAME=riak@riak3
     ports:
       - "8089:8087"
       - "8100:8098"
     networks:
-      - food_network
+      food_network:
+        ipv4_address: 172.23.0.13
     depends_on:
       - riak1
 
 volumes:
-  postgres_data_v2:
-
+  postgres_data_17:
 
 networks:
   food_network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.23.0.0/16

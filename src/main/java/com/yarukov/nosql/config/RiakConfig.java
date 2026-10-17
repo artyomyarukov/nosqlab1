@@ -8,7 +8,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,7 +20,7 @@ public class RiakConfig {
     private RiakCluster cluster;
 
     @Bean
-    public RiakClient riakClient() throws UnknownHostException {
+    public RiakClient riakClient() {
         List<RiakNode> nodes = new ArrayList<>();
         String[] nodeAddresses = riakNodesConfig.split(",");
         for (String address : nodeAddresses) {
