@@ -4,14 +4,17 @@ import com.yarukov.nosql.dao.ActionHistoryDao;
 import com.yarukov.nosql.dao.CounterDao;
 import com.yarukov.nosql.dao.UserCacheDao;
 import com.yarukov.nosql.dto.*;
+import com.yarukov.nosql.model.entity.History;
 import com.yarukov.nosql.model.entity.User;
 import com.yarukov.nosql.model.riak.ActionEvent;
 import com.yarukov.nosql.model.riak.CachedUserProfile;
 import com.yarukov.nosql.model.riak.UserSession;
+import com.yarukov.nosql.repository.jpa.HistoryRepository;
 import com.yarukov.nosql.repository.jpa.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -25,6 +28,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final AuthService authService;
+    private final HistoryRepository historyRepository;
 
 
     private final UserCacheDao userCacheDao;
@@ -91,6 +95,7 @@ public class UserService {
                 .build();
     }
 
+    @Transactional
     public UserProfileResponse updateUserProfile(Long userId, UpdateUserRequest request, String token) {
         UserSession session = authService.getActiveSessionOrThrow(token);
 
@@ -100,23 +105,22 @@ public class UserService {
         if (request.getFullName() != null) user.setFullName(request.getFullName());
         if (request.getPhone() != null) user.setPhone(request.getPhone());
         if (request.getDeliveryAddress() != null) user.setDeliveryAddress(request.getDeliveryAddress());
-
         userRepository.save(user);
-
-
-        userCacheDao.deleteById(userId);
-
-
-        actionHistoryDao.add(userId, ActionEvent.builder()
-                .timestamp(Instant.now())
+        historyRepository.save(History.builder()
+                .userId(userId)
                 .action("PROFILE_UPDATED")
                 .operator(session.getOperatorName())
-                .details("Обновлены контактные данные пользователя")
+                .details("Обновлен юзер")
+                .timestamp(Instant.now())
                 .build());
+        userCacheDao.deleteById(userId);
+        actionHistoryDao.deleteByUserId(userId);
 
         return getUserProfile(userId);
     }
 
+
+    @Transactional
     public NotificationResponse sendNotification(Long userId, NotificationRequest request, String token) {
         UserSession session = authService.getActiveSessionOrThrow(token);
 
@@ -124,16 +128,17 @@ public class UserService {
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
 
         Instant now = Instant.now();
-
-        actionHistoryDao.add(userId, ActionEvent.builder()
-                .timestamp(now)
+        historyRepository.save(History.builder()
+                .userId(userId)
                 .action("NOTIFICATION_SENT [" + request.getType() + "]")
                 .operator(session.getOperatorName())
                 .details(request.getMessage())
+                .timestamp(now)
                 .build());
 
-        log.info("Уведомление отправлено пользователю '{}': {}", user.getUsername(), request.getMessage());
+        actionHistoryDao.deleteByUserId(userId);
 
+        log.info("Уведомление оператором '{}' отправлено пользователю '{}'", session.getOperatorName(), user.getUsername());
         return NotificationResponse.builder()
                 .status("SENT")
                 .loggedAt(now)
@@ -142,6 +147,23 @@ public class UserService {
     }
 
     public List<ActionEvent> getUserActionHistory(Long userId) {
-        return actionHistoryDao.findByUserId(userId);
+        Optional<List<ActionEvent>> cachedHistory = actionHistoryDao.findByUserId(userId);
+        if (cachedHistory.isPresent()) {
+            log.info("CACHE HIT: История пользователя id={} получена из Riak KV", userId);
+            return cachedHistory.get();
+        }
+        log.info("CACHE MISS: Загрузка истории действий id={} из PostgreSQL", userId);
+        List<ActionEvent> history = historyRepository.findByUserIdOrderByTimestampDesc(userId).stream()
+                .map(h -> ActionEvent.builder()
+                        .action(h.getAction())
+                        .operator(h.getOperator())
+                        .details(h.getDetails())
+                        .timestamp(h.getTimestamp())
+                        .build())
+                .collect(Collectors.toList());
+
+        actionHistoryDao.save(userId, history);
+
+        return history;
     }
 }

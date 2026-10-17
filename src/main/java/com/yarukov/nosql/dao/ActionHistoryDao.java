@@ -1,6 +1,7 @@
 package com.yarukov.nosql.dao;
 
 import com.basho.riak.client.api.RiakClient;
+import com.basho.riak.client.api.commands.kv.DeleteValue;
 import com.basho.riak.client.api.commands.kv.FetchValue;
 import com.basho.riak.client.api.commands.kv.StoreValue;
 import com.basho.riak.client.core.query.Location;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Repository
@@ -34,40 +36,50 @@ public class ActionHistoryDao {
         this.objectMapper.registerModule(new JavaTimeModule());
     }
 
-    public void add(Long userId, ActionEvent event) {
+    public void save(Long userId, List<ActionEvent> history) {
         try {
-            List<ActionEvent> history = findByUserId(userId);
-            history.add(0, event);
-
-            String json = objectMapper.writeValueAsString(history);
+            byte[] bytes = objectMapper.writeValueAsBytes(history);;
             Location location = new Location(HISTORY_NS, String.valueOf(userId));
             RiakObject riakObject = new RiakObject()
                     .setContentType("application/json")
-                    .setValue(BinaryValue.create(json));
+                    .setValue(BinaryValue.create(bytes));
 
             StoreValue store = new StoreValue.Builder(riakObject).withLocation(location).build();
             riakClient.execute(store);
-            log.info("Событие '{}' сохранено в историю пользователя id={}", event.getAction(), userId);
+            log.info("Кэш истории действий пользователя id={} сохранен в Riak KV", userId);
         } catch (Exception e) {
-            log.error("Ошибка сохранения истории в Riak", e);
+            log.error("Ошибка сохранения кэша истории в Riak", e);
         }
     }
 
-    public List<ActionEvent> findByUserId(Long userId) {
+    public Optional<List<ActionEvent>> findByUserId(Long userId) {
         try {
             Location location = new Location(HISTORY_NS, String.valueOf(userId));
             FetchValue fetch = new FetchValue.Builder(location).build();
             FetchValue.Response response = riakClient.execute(fetch);
 
             if (response.isNotFound()) {
-                return new ArrayList<>();
+                return Optional.empty();
             }
 
             RiakObject obj = response.getValue(RiakObject.class);
-            return objectMapper.readValue(obj.getValue().getValue(), new TypeReference<List<ActionEvent>>() {});
+            List<ActionEvent> list = objectMapper.readValue(obj.getValue().getValue(), new TypeReference<>() {
+            });
+            return Optional.of(list);
         } catch (Exception e) {
-            log.error("Ошибка чтения истории из Riak", e);
-            return new ArrayList<>();
+            log.error("Ошибка чтения кэша истории из Riak", e);
+            return Optional.empty();
+        }
+    }
+
+    public void deleteByUserId(Long userId) {
+        try {
+            Location location = new Location(HISTORY_NS, String.valueOf(userId));
+            DeleteValue delete = new DeleteValue.Builder(location).build();
+            riakClient.execute(delete);
+            log.info("Кэш истории действий id={} сброшен в Riak", userId);
+        } catch (Exception e) {
+            log.error("Ошибка инвалидации кэша истории в Riak", e);
         }
     }
 }
