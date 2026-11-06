@@ -106,6 +106,10 @@
 .ticket-input input,
 .ticket-input select { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 12px; }
 .ticket-search-form > .button { margin-top: 2px; padding: 11px 14px; }
+.ticket-attachment-form { padding-top: 20px; border-top: 1px solid var(--line); }
+.ticket-attachment-form h3 { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--ink); font-size: 12px; }
+.ticket-attachment-form > p { margin: 0 0 6px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.ticket-results-filter { margin: 0; padding: 0 20px 12px; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
 .ticket-results-heading {
   display: flex;
   align-items: center;

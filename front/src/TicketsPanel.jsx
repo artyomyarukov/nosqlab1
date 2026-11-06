@@ -75,6 +75,7 @@ function ErrorNotice({ message, retry }) {
 export default function TicketsPanel({ session, showToast, onError, onConnectionChange }) {
   const [query, setQuery] = useState({ mode: 'all', tag: '', fromDate: '', skip: 0 })
   const [filters, setFilters] = useState(() => ({ tag: query.tag, fromDate: query.fromDate }))
+  const [attachmentType, setAttachmentType] = useState('')
   const [tickets, setTickets] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [detail, setDetail] = useState(null)
@@ -133,9 +134,14 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
     const controller = new AbortController()
     setSearchLoading(true)
     setSearchError('')
-    const load = query.mode === 'all'
-      ? api.getTickets(controller.signal)
-      : api.searchTickets(query.tag, new Date(query.fromDate + 'T00:00:00').toISOString(), PAGE_SIZE, query.skip, controller.signal)
+    let load
+    if (query.mode === 'all') {
+      load = api.getTickets(controller.signal)
+    } else if (query.mode === 'attachment') {
+      load = api.searchByAttachment(query.contentType, controller.signal)
+    } else {
+      load = api.searchTickets(query.tag, new Date(query.fromDate + 'T00:00:00').toISOString(), PAGE_SIZE, query.skip, controller.signal)
+    }
     load
       .then((data) => {
         if (controller.signal.aborted) return
@@ -215,8 +221,16 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
     setQuery({ mode: 'search', tag: filters.tag, fromDate: filters.fromDate, skip: 0 })
   }
 
+  function searchByAttachment(event) {
+    event.preventDefault()
+    const contentType = attachmentType.trim()
+    if (!contentType || busy) return
+    setQuery({ mode: 'attachment', contentType, skip: 0 })
+  }
+
   function showAll() {
     setFilters({ tag: '', fromDate: '' })
+    setAttachmentType('')
     setQuery({ mode: 'all', tag: '', fromDate: '', skip: 0 })
   }
 
@@ -355,14 +369,40 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
           </form>
           {tagsError && <ErrorNotice message={tagsError} retry={() => setTagsVersion((current) => current + 1)} />}
 
-          <div className="ticket-results-heading">
-            <strong>{query.mode === 'all' ? 'Все обращения' : 'Результаты поиска'}</strong>
-            <span>{searchLoading ? 'Загрузка…' : query.mode === 'all' ? 'Всего: ' + tickets.length : tickets.length + ' на странице'}</span>
+          <form className="ticket-search-form ticket-attachment-form" onSubmit={searchByAttachment}
+            aria-labelledby="attachment-search-title">
+            <h3 id="attachment-search-title"><Paperclip size={15} /> Поиск по вложениям</h3>
+            <p>Ищет обращения по типу вложенного файла.</p>
+            <label htmlFor="ticket-content-type">Тип вложения (MIME)</label>
+            <div className="ticket-input">
+              <FileText size={16} />
+              <input id="ticket-content-type" list="ticket-content-types" value={attachmentType}
+                onChange={(event) => setAttachmentType(event.target.value)}
+                placeholder="Например, image/jpeg" required disabled={busy} />
+              <datalist id="ticket-content-types">
+                <option value="image/jpeg">Изображение JPEG</option>
+                <option value="image/png">Изображение PNG</option>
+                <option value="application/pdf">Документ PDF</option>
+                <option value="text/plain">Текстовый файл</option>
+                <option value="video/mp4">Видео MP4</option>
+                <option value="application/zip">Архив ZIP</option>
+              </datalist>
+            </div>
+            <button className="button dark" disabled={searchLoading || busy || !attachmentType.trim()}>
+              {searchLoading && query.mode === 'attachment'
+                ? <LoaderCircle className="spin" size={16} /> : <Search size={16} />} Найти по вложениям
+            </button>
+          </form>
+
+          <div className="ticket-results-heading" role="status">
+            <strong>{query.mode === 'all' ? 'Все обращения' : query.mode === 'attachment' ? 'По типу вложения' : 'Результаты поиска'}</strong>
+            <span>{searchLoading ? 'Загрузка…' : query.mode === 'all' ? 'Всего: ' + tickets.length : query.mode === 'attachment' ? 'Показано: ' + tickets.length : tickets.length + ' на странице'}</span>
           </div>
+          {query.mode === 'attachment' && <p className="ticket-results-filter">Тип: {query.contentType}</p>}
           {searchError ? <ErrorNotice message={searchError} retry={() => setQuery((current) => ({ ...current }))} /> : (
             <div className="ticket-results" aria-busy={searchLoading}>
               {searchLoading ? <Loading label="Ищем обращения" /> : tickets.length === 0 ? (
-                <Empty icon={Search} title="Обращений не найдено" text={query.mode === 'all' ? 'Создайте первое обращение с помощью кнопки выше.' : 'Попробуйте другую метку или более раннюю дату.'} />
+                <Empty icon={Search} title="Обращений не найдено" text={query.mode === 'all' ? 'Создайте первое обращение с помощью кнопки выше.' : query.mode === 'attachment' ? 'Попробуйте другой тип вложения, например image/jpeg.' : 'Попробуйте другую метку или более раннюю дату.'} />
               ) : visibleTickets.map((ticket) => (
                 <button key={ticketId(ticket)}
                   className={'ticket-row' + (selectedId === ticketId(ticket) ? ' active' : '')}
@@ -375,7 +415,7 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
               ))}
             </div>
           )}
-          <div className="ticket-pagination">
+          {query.mode !== 'attachment' && <div className="ticket-pagination">
             <button className="icon-button bordered" aria-label="Предыдущая страница"
               disabled={query.skip === 0 || searchLoading || busy}
               onClick={() => setQuery((current) => ({ ...current, skip: Math.max(0, current.skip - PAGE_SIZE) }))}>
@@ -387,8 +427,8 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
               onClick={() => setQuery((current) => ({ ...current, skip: current.skip + PAGE_SIZE }))}>
               <ArrowRight size={16} />
             </button>
-          </div>
-          <div className="storage-note"><Database size={16} /><span><strong>CouchDB · tickets</strong><small>Поиск по метке и дате создания</small></span></div>
+          </div>}
+          <div className="storage-note"><Database size={16} /><span><strong>CouchDB · tickets</strong><small>Поиск по метке, дате или типу вложения</small></span></div>
         </aside>
 
         <div className="ticket-work-area">

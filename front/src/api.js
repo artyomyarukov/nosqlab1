@@ -88,6 +88,11 @@ export const api = {
     return request('/api/tickets/search?' + params, { signal })
   },
 
+  searchByAttachment: (contentType, signal) => {
+    const params = new URLSearchParams({ contentType })
+    return request('/api/tickets/search/by-attachment?' + params, { signal })
+  },
+
   getTicket: (id, signal) =>
     request('/api/tickets/' + encodeURIComponent(id), { signal }),
 
