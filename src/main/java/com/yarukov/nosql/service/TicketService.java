@@ -121,6 +121,11 @@ public class TicketService {
             }
         }
 
+
+
         return "Миграция завершена. Обновлено документов (v1 -> v2): " + migratedCount;
+    }
+    public List<TicketDoc> findByAttachmentType(String contentType) {
+        return ticketQueryDao.findByAttachmentType(contentType);
     }
 }

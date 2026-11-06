@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+
 @Slf4j
 @Repository
 public class TicketQueryDao {
@@ -71,4 +72,39 @@ public class TicketQueryDao {
                 .uri(DB + "/_design/analytics/_view/avg_changes_by_status?group=true")
                 .retrieve().bodyToMono(JsonNode.class));
     }
+
+
+    public List<TicketDoc> findByAttachmentType(String contentType) {
+        List<TicketDoc> result = new ArrayList<>();
+        try {
+            Map<String, Object> query = Map.of(
+                    "selector", Map.of(
+                            "attachments", Map.of(
+                                    "$elemMatch", Map.of("contentType", contentType)
+                            )
+                    )
+            );
+
+            String responseString = couchDbReadDao.read(client -> client.post().uri(DB + "/_find")
+                    .bodyValue(query)
+                    .retrieve()
+                    .bodyToMono(String.class));
+
+            if (responseString != null && !responseString.isBlank()) {
+                JsonNode root = objectMapper.readTree(responseString);
+                if (root.has("docs")) {
+                    for (JsonNode doc : root.get("docs")) {
+                        result.add(objectMapper.treeToValue(doc, TicketDoc.class));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Ошибка поиска по вложенным полям", e);
+            throw new RuntimeException("Не удалось выполнить поиск по вложениям в CouchDB", e);
+        }
+        return result;
+    }
+
+
+
 }

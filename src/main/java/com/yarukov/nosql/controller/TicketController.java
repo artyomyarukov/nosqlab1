@@ -78,4 +78,12 @@ public class TicketController {
     public ResponseEntity<List<TicketTag>> getAvailableTags() {
         return ResponseEntity.ok(List.of(TicketTag.values()));
     }
+
+    @GetMapping("/search/by-attachment")
+    public ResponseEntity<List<TicketDoc>> searchByAttachment(
+            @RequestParam String contentType) {
+        return ResponseEntity.ok(ticketService.findByAttachmentType(contentType));
+    }
+
+
 }

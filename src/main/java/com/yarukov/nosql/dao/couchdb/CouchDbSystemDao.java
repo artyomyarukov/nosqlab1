@@ -41,9 +41,9 @@ public class CouchDbSystemDao {
                     }
                     """;
             couchClient1.post().uri("/tickets/_index").bodyValue(indexJson).retrieve().toBodilessEntity().block();
-            log.info("Система: Mango-индекс (tags, createdAt) готов");
+            log.info("Mango-индекс (tags, createdAt) готов");
         } catch (Exception e) {
-            log.debug("Система: Mango-индекс уже существует");
+            log.debug("Mango-индекс уже существует");
         }
     }
 
@@ -62,9 +62,9 @@ public class CouchDbSystemDao {
                     """;
             couchClient1.put().uri("/tickets/_design/analytics").
                     bodyValue(designDoc).retrieve().toBodilessEntity().block();
-            log.info("Система: MapReduce View для аналитики готово");
+            log.info("MapReduce View для аналитики готово");
         } catch (Exception e) {
-            log.debug("Система: MapReduce View уже существует");
+            log.debug("MapReduce View уже существует");
         }
     }
 
@@ -80,7 +80,7 @@ public class CouchDbSystemDao {
             couchClient1.put().uri("/tickets/_design/validation").bodyValue(validationDoc).retrieve().toBodilessEntity().block();
             log.info("Система: Триггер validate_doc_update установлен");
         } catch (Exception e) {
-            log.debug("Система: Триггер валидации уже существует");
+            log.debug("Триггер валидации уже существует");
         }
     }
 
