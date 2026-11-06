@@ -8,5 +8,5 @@ import java.util.List;
 
 @Repository
 public interface HistoryRepository extends JpaRepository<History, Long> {
-    List<History> findByUserIdOrderByTimestampDesc(long userId);
+    List<History> findByUserIdOrderByTimestampDesc(String userId);
 }

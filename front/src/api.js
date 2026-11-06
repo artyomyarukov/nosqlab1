@@ -47,7 +47,7 @@ export const api = {
       headers: authHeaders(token),
     }),
 
-  users: () => request('/api/users'),
+  users: (signal) => request('/api/users', { signal }),
 
   profile: (id) => request(`/api/users/${id}`),
 
@@ -66,6 +66,51 @@ export const api = {
     }),
 
   history: (id) => request(`/api/users/${id}/history`),
+
+  getTickets: (signal) => request('/api/tickets', { signal }),
+
+  getTicketTags: (signal) => request('/api/tickets/tags', { signal }),
+
+  createTicket: (payload, token) =>
+    request('/api/tickets', {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ ...payload, changeCount: 1 }),
+    }),
+
+  searchTickets: (tag, fromDate, limit = 10, skip = 0, signal) => {
+    const params = new URLSearchParams({
+      tag,
+      fromDate,
+      limit: String(limit),
+      skip: String(skip),
+    })
+    return request('/api/tickets/search?' + params, { signal })
+  },
+
+  searchByAttachment: (contentType, signal) => {
+    const params = new URLSearchParams({ contentType })
+    return request('/api/tickets/search/by-attachment?' + params, { signal })
+  },
+
+  getTicket: (id, signal) =>
+    request('/api/tickets/' + encodeURIComponent(id), { signal }),
+
+  updateTicketStatus: (id, status, token) => {
+    const params = new URLSearchParams({ status })
+    return request('/api/tickets/' + encodeURIComponent(id) + '/status?' + params, {
+      method: 'PUT',
+      headers: authHeaders(token),
+    })
+  },
+
+  getAnalytics: (signal) => request('/api/tickets/analytics', { signal }),
+
+  migrateTickets: (token) =>
+    request('/api/tickets/migrate', {
+      method: 'POST',
+      headers: authHeaders(token),
+    }),
 }
 
 export { API_URL }

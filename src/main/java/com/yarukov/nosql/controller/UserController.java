@@ -30,12 +30,12 @@ public class UserController {
 
 
     @GetMapping("/{id}")
-    public ResponseEntity<?> getUserProfile(@PathVariable Long id) {
+    public ResponseEntity<?> getUserProfile(@PathVariable String id) {
         return ResponseEntity.ok(userService.getUserProfile(id));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateUserProfile(@PathVariable Long id, @RequestBody UpdateUserRequest request,
+    public ResponseEntity<?> updateUserProfile(@PathVariable String id, @RequestBody UpdateUserRequest request,
                                                @RequestHeader(value = "X-Session-Token", required = false) String token) {
 
         return ResponseEntity.ok(userService.updateUserProfile(id, request, token));
@@ -43,13 +43,13 @@ public class UserController {
 
 
     @PostMapping("/{id}/notify")
-    public ResponseEntity<?> notifyUser(@PathVariable Long id, @Valid @RequestBody NotificationRequest request,
+    public ResponseEntity<?> notifyUser(@PathVariable String id, @Valid @RequestBody NotificationRequest request,
                                         @RequestHeader(value = "X-Session-Token", required = false) String token) {
         return ResponseEntity.ok(userService.sendNotification(id, request, token));
     }
 
     @GetMapping("/{id}/history")
-    public ResponseEntity<List<ActionEvent>> getUserHistory(@PathVariable Long id) {
+    public ResponseEntity<List<ActionEvent>> getUserHistory(@PathVariable String id) {
         return ResponseEntity.ok(userService.getUserActionHistory(id));
     }
 }

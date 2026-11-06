@@ -1,8 +1,9 @@
-package com.yarukov.nosql.dao;
+package com.yarukov.nosql.dao.riak;
 
 import com.basho.riak.client.api.RiakClient;
 import com.basho.riak.client.api.commands.kv.DeleteValue;
 import com.basho.riak.client.api.commands.kv.FetchValue;
+import com.basho.riak.client.api.commands.kv.ListKeys;
 import com.basho.riak.client.api.commands.kv.StoreValue;
 import com.basho.riak.client.core.query.Location;
 import com.basho.riak.client.core.query.Namespace;
@@ -10,24 +11,23 @@ import com.basho.riak.client.core.query.RiakObject;
 import com.basho.riak.client.core.util.BinaryValue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.yarukov.nosql.model.riak.UserSession;
+import com.yarukov.nosql.model.riak.CachedUserProfile;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Repository;
-import com.basho.riak.client.api.commands.kv.ListKeys;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
 @Slf4j
 @Repository
 @RequiredArgsConstructor
-public class SessionDao {
+public class UserCacheDao {
 
     private final RiakClient riakClient;
     private ObjectMapper objectMapper;
-    private static final Namespace SESSIONS_NS = new Namespace("default", "operator_sessions");
+    private static final Namespace PROFILES_NS = new Namespace("default", "cached_profiles");
 
     @PostConstruct
     public void init() {
@@ -35,25 +35,25 @@ public class SessionDao {
         this.objectMapper.registerModule(new JavaTimeModule());
     }
 
-    public void save(UserSession session) {
+    public void save(CachedUserProfile profile) {
         try {
-            String json = objectMapper.writeValueAsString(session);
-            Location location = new Location(SESSIONS_NS, session.getToken());
+            String json = objectMapper.writeValueAsString(profile);
+            Location location = new Location(PROFILES_NS, String.valueOf(profile.getId()));
             RiakObject riakObject = new RiakObject()
                     .setContentType("application/json")
                     .setValue(BinaryValue.create(json));
 
             StoreValue store = new StoreValue.Builder(riakObject).withLocation(location).build();
             riakClient.execute(store);
-            log.info("Сессия оператора {} сохранена в Riak (токен: {})", session.getUsername(), session.getToken());
+            log.info("Профиль пользователя id={} закэширован в Riak KV", profile.getId());
         } catch (Exception e) {
-            log.error("Ошибка сохранения сессии в Riak", e);
+            log.error("Ошибка кэширования профиля в Riak", e);
         }
     }
 
-    public Optional<UserSession> findByToken(String token) {
+    public Optional<CachedUserProfile> findById(String userId) {
         try {
-            Location location = new Location(SESSIONS_NS, token);
+            Location location = new Location(PROFILES_NS, userId);
             FetchValue fetch = new FetchValue.Builder(location).build();
             FetchValue.Response response = riakClient.execute(fetch);
 
@@ -62,51 +62,54 @@ public class SessionDao {
             }
 
             RiakObject obj = response.getValue(RiakObject.class);
-            UserSession session = objectMapper.readValue(obj.getValue().getValue(), UserSession.class);
-
-
-            if (session.isExpired()) {
-                log.warn("Сессия с токеном {} истекла (TTL).", token);
-                deleteByToken(token);
+            CachedUserProfile profile = objectMapper.readValue(obj.getValue().getValue(), CachedUserProfile.class);
+            if (profile.getCachedAt() != null &&
+                    java.time.Instant.now().
+                            isAfter(profile.getCachedAt().
+                                    plus(10, java.time.temporal.ChronoUnit.MINUTES)))
+            {
+                deleteById(userId);
                 return Optional.empty();
             }
 
-            return Optional.of(session);
+            return Optional.of(profile);
         } catch (Exception e) {
-            log.error("Ошибка чтения сессии из Riak", e);
+            log.error("Ошибка чтения кэша профиля из Riak", e);
             return Optional.empty();
         }
     }
 
-    public void deleteByToken(String token) {
+    public void deleteById(String userId) {
         try {
-            Location location = new Location(SESSIONS_NS, token);
+            Location location = new Location(PROFILES_NS, String.valueOf(userId));
             DeleteValue delete = new DeleteValue.Builder(location).build();
             riakClient.execute(delete);
-            log.info("Сессия {} удалена из Riak", token);
+            log.info("Кэш профиля id={} удален (инвалидирован) из Riak", userId);
         } catch (Exception e) {
-            log.error("Ошибка удаления сессии из Riak", e);
+            log.error("Ошибка инвалидации кэша в Riak", e);
         }
     }
 
 
     @Scheduled(fixedRate = 60000)
-    public void cleanupExpiredSessions() {
+    public void cleanupExpiredUserCaches() {
         try {
-            ListKeys listKeys =
-                    new ListKeys.Builder(SESSIONS_NS).build();
+            ListKeys listKeys = new ListKeys.Builder(PROFILES_NS).build();
             ListKeys.Response response = riakClient.execute(listKeys);
+
             int cleaned = 0;
             for (Location location : response) {
-                if (findByToken(location.getKeyAsString()).isEmpty()) {
+                if (findById(location.getKeyAsString()).isEmpty()) {
                     cleaned++;
                 }
             }
             if (cleaned > 0) {
-                log.info("Фоновый шедулер: автоматически удалено {} протухших сессий из Riak KV", cleaned);
+                log.info("автоматически удалено {} протухших кэшей профилей из Riak KV", cleaned);
             }
         } catch (Exception e) {
-            log.error("Ошибка при фоновой очистке сессий", e);
+            log.error("Ошибка при фоновой очистке кэша профилей в Riak", e);
         }
     }
 }
+
+

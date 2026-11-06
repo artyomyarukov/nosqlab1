@@ -1,4 +1,4 @@
-package com.yarukov.nosql.dao;
+package com.yarukov.nosql.dao.riak;
 
 import com.basho.riak.client.api.RiakClient;
 import com.basho.riak.client.api.commands.datatypes.CounterUpdate;
@@ -18,7 +18,7 @@ public class CounterDao {
     private final RiakClient riakClient;
     private static final Namespace COUNTERS_NS = new Namespace("counters", "page_visits");
 
-    public void increment(Long userId) {
+    public void increment(String userId) {
         try {
             Location location = new Location(COUNTERS_NS, "user_visit_" + userId);
             CounterUpdate cu = new CounterUpdate(1);
@@ -30,7 +30,7 @@ public class CounterDao {
         }
     }
 
-    public long getCount(Long userId) {
+    public long getCount(String userId) {
         try {
             Location location = new Location(COUNTERS_NS, "user_visit_" + userId);
             FetchCounter fc = new FetchCounter.Builder(location).build();

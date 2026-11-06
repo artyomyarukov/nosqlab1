@@ -1,12 +1,12 @@
 package com.yarukov.nosql.service;
 
-import com.yarukov.nosql.dao.SessionDao;
+import com.yarukov.nosql.dao.couchdb.UserCouchDao;
+import com.yarukov.nosql.dao.riak.SessionDao;
 import com.yarukov.nosql.dto.LoginRequest;
 import com.yarukov.nosql.dto.LoginResponse;
 import com.yarukov.nosql.dto.SessionStatusResponse;
-import com.yarukov.nosql.model.entity.User;
+import com.yarukov.nosql.model.couchdb.UserDoc;
 import com.yarukov.nosql.model.riak.UserSession;
-import com.yarukov.nosql.repository.jpa.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -19,14 +19,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuthService {
 
-    private final UserRepository userRepository;
+    private final UserCouchDao userCouchDao;
     private final SessionDao sessionDao;
 
     private static final Duration SESSION_TTL = Duration.ofMinutes(15);
 
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+        UserDoc user = userCouchDao.findByUsername(request.getUsername())
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден в CouchDB"));
 
         if (!"OPERATOR".equalsIgnoreCase(user.getRole())) {
             throw new RuntimeException("Доступ разрешен только операторам");

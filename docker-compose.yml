@@ -54,8 +54,38 @@ services:
     depends_on:
       - riak1
 
+  couchdb1:
+    image: couchdb:3.3.3
+    container_name: couchdb1
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+    ports:
+      - "5984:5984"
+    volumes:
+      - couchdb1_data:/opt/couchdb/data
+    networks:
+      food_network:
+        ipv4_address: 172.23.0.21
+
+  couchdb2:
+    image: couchdb:3.3.3
+    container_name: couchdb2
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+    ports:
+      - "5985:5984"
+    volumes:
+      - couchdb2_data:/opt/couchdb/data
+    networks:
+      food_network:
+        ipv4_address: 172.23.0.22
+
 volumes:
   postgres_data_17:
+  couchdb1_data:
+  couchdb2_data:
 
 networks:
   food_network:
