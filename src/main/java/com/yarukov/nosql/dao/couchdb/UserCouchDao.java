@@ -21,11 +21,13 @@ import java.util.Optional;
 public class UserCouchDao {
 
     private final WebClient couchClient;
+    private final CouchDbReadDao couchDbReadDao;
     private ObjectMapper objectMapper;
     private static final String DB = "/users";
 
-    public UserCouchDao(@Qualifier("couchDbClient1") WebClient couchClient) {
+    public UserCouchDao(@Qualifier("couchDbClient1") WebClient couchClient, CouchDbReadDao couchDbReadDao) {
         this.couchClient = couchClient;
+        this.couchDbReadDao = couchDbReadDao;
     }
 
     @PostConstruct
@@ -56,12 +58,11 @@ public class UserCouchDao {
 
     public Optional<UserDoc> findById(String id) {
         try {
-            UserDoc doc = couchClient.get()
+            UserDoc doc = couchDbReadDao.read(client -> client.get()
                     .uri(DB + "/" + id)
                     .retrieve()
                     .bodyToMono(UserDoc.class)
-                    .onErrorResume(WebClientResponseException.NotFound.class, e -> Mono.empty())
-                    .block();
+                    .onErrorResume(WebClientResponseException.NotFound.class, e -> Mono.empty()));
             return Optional.ofNullable(doc);
         } catch (Exception e) {
             throw new RuntimeException("Не удалось прочитать документ из CouchDB", e);
@@ -71,11 +72,10 @@ public class UserCouchDao {
     public List<UserDoc> findAll() {
         List<UserDoc> users = new ArrayList<>();
         try {
-            JsonNode root = couchClient.get()
+            JsonNode root = couchDbReadDao.read(client -> client.get()
                     .uri(DB + "/_all_docs?include_docs=true")
                     .retrieve()
-                    .bodyToMono(JsonNode.class)
-                    .block();
+                    .bodyToMono(JsonNode.class));
 
             if (root != null && root.has("rows")) {
                 for (JsonNode row : root.get("rows")) {
@@ -96,12 +96,11 @@ public class UserCouchDao {
         try {
             Map<String, Object> query = Map.of("selector", Map.of("username", username));
 
-            JsonNode root = couchClient.post()
+            JsonNode root = couchDbReadDao.read(client -> client.post()
                     .uri(DB + "/_find")
                     .bodyValue(query)
                     .retrieve()
-                    .bodyToMono(JsonNode.class)
-                    .block();
+                    .bodyToMono(JsonNode.class));
 
             if (root != null && root.has("docs") && !root.get("docs").isEmpty()) {
                 UserDoc user = objectMapper.treeToValue(root.get("docs").get(0), UserDoc.class);

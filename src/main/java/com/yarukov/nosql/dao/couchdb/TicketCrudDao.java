@@ -20,11 +20,13 @@ import java.util.Optional;
 public class TicketCrudDao {
 
     private final WebClient couchClient;
+    private final CouchDbReadDao couchDbReadDao;
     private ObjectMapper objectMapper;
     private static final String DB = "/tickets";
 
-    public TicketCrudDao(@Qualifier("couchDbClient1") WebClient couchClient) {
+    public TicketCrudDao(@Qualifier("couchDbClient1") WebClient couchClient, CouchDbReadDao couchDbReadDao) {
         this.couchClient = couchClient;
+        this.couchDbReadDao = couchDbReadDao;
     }
     @PostConstruct
     public void init() {
@@ -54,12 +56,11 @@ public class TicketCrudDao {
 
     public Optional<TicketDoc> findById(String id) {
         try {
-            TicketDoc doc = couchClient.get()
+            TicketDoc doc = couchDbReadDao.read(client -> client.get()
                     .uri(DB + "/" + id)
                     .retrieve()
                     .bodyToMono(TicketDoc.class)
-                    .onErrorResume(WebClientResponseException.NotFound.class, e -> Mono.empty())
-                    .block();
+                    .onErrorResume(WebClientResponseException.NotFound.class, e -> Mono.empty()));
             return Optional.ofNullable(doc);
         } catch (Exception e) {
             throw new RuntimeException("Не удалось прочитать документ из CouchDB", e);
@@ -69,11 +70,10 @@ public class TicketCrudDao {
     public List<TicketDoc> findAll() {
         List<TicketDoc> tickets = new ArrayList<>();
         try {
-            JsonNode root = couchClient.get()
+            JsonNode root = couchDbReadDao.read(client -> client.get()
                     .uri(DB + "/_all_docs?include_docs=true")
                     .retrieve()
-                    .bodyToMono(JsonNode.class)
-                    .block();
+                    .bodyToMono(JsonNode.class));
 
             if (root != null && root.has("rows")) {
                 for (JsonNode row : root.get("rows")) {

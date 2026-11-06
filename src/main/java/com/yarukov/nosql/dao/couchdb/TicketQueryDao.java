@@ -3,9 +3,7 @@ package com.yarukov.nosql.dao.couchdb;
 import com.yarukov.nosql.model.couchdb.TicketDoc;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Repository;
-import org.springframework.web.reactive.function.client.WebClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -17,12 +15,12 @@ import java.util.Map;
 @Repository
 public class TicketQueryDao {
 
-    private final WebClient couchClient;
+    private final CouchDbReadDao couchDbReadDao;
     private ObjectMapper objectMapper;
     private static final String DB = "/tickets";
 
-    public TicketQueryDao(@Qualifier("couchDbClient1") WebClient couchClient) {
-        this.couchClient = couchClient;
+    public TicketQueryDao(CouchDbReadDao couchDbReadDao) {
+        this.couchDbReadDao = couchDbReadDao;
     }
 
     @PostConstruct
@@ -42,8 +40,8 @@ public class TicketQueryDao {
                     "skip", skip,
                     "use_index", "tags_createdAt_index");
 
-            JsonNode root = couchClient.post().uri(DB + "/_find").bodyValue(query)
-                    .retrieve().bodyToMono(JsonNode.class).block();
+            JsonNode root = couchDbReadDao.read(client -> client.post().uri(DB + "/_find").bodyValue(query)
+                    .retrieve().bodyToMono(JsonNode.class));
 
             if (root != null && root.has("docs")) {
                 for (JsonNode doc : root.get("docs")) {
@@ -64,12 +62,13 @@ public class TicketQueryDao {
                         "createdAt", Map.of("$gte", fromDate)),
                 "use_index", "tags_createdAt_index");
 
-        return couchClient.post().uri(DB + "/_explain").bodyValue(query)
-                .retrieve().bodyToMono(JsonNode.class).block();
+        return couchDbReadDao.read(client -> client.post().uri(DB + "/_explain").bodyValue(query)
+                .retrieve().bodyToMono(JsonNode.class));
     }
 
     public JsonNode getAverageChangesByStatus() {
-        return couchClient.get().uri(DB + "/_design/analytics/_view/avg_changes_by_status?group=true")
-                .retrieve().bodyToMono(JsonNode.class).block();
+        return couchDbReadDao.read(client -> client.get()
+                .uri(DB + "/_design/analytics/_view/avg_changes_by_status?group=true")
+                .retrieve().bodyToMono(JsonNode.class));
     }
 }

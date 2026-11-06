@@ -21,12 +21,14 @@ import {
   Search,
   Send,
   ShieldCheck,
+  Headset,
   Sparkles,
   UserRound,
   UsersRound,
   X,
 } from 'lucide-react'
 import { API_URL, api } from './api'
+import TicketsPanel from './TicketsPanel'
 
 const STORAGE_KEY = 'food-delivery-operator-session'
 const UI_STORAGE_KEY = 'food-delivery-operator-ui'
@@ -79,6 +81,9 @@ function roleLabel(role) {
 function App() {
   const [storedUi] = useState(readStoredUi)
   const [session, setSession] = useState(readStoredSession)
+  const [activeSection, setActiveSection] = useState(
+    storedUi.activeSection === 'tickets' ? 'tickets' : 'users',
+  )
   const [username, setUsername] = useState('operator1')
   const [remaining, setRemaining] = useState(0)
   const [users, setUsers] = useState([])
@@ -95,8 +100,13 @@ function App() {
 
   const showToast = useCallback((message, tone = 'success') => {
     setToast({ message, tone })
-    window.setTimeout(() => setToast(null), 3600)
   }, [])
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(null), 5000)
+    return () => window.clearTimeout(timer)
+  }, [toast])
 
   const clearSession = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY)
@@ -157,22 +167,23 @@ function App() {
   }, [handleError])
 
   useEffect(() => {
-    loadUsers()
-  }, [loadUsers])
+    if (activeSection === 'users') loadUsers()
+  }, [activeSection, loadUsers])
 
   useEffect(() => {
-    if (!selectedId) return
+    if (activeSection !== 'users' || !selectedId) return
     setEditing(false)
     Promise.all([loadProfile(selectedId), loadHistory(selectedId)])
-  }, [selectedId, loadHistory, loadProfile])
+  }, [activeSection, selectedId, loadHistory, loadProfile])
 
   useEffect(() => {
     localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({
       selectedId,
       query,
       notification,
+      activeSection,
     }))
-  }, [selectedId, query, notification])
+  }, [selectedId, query, notification, activeSection])
 
   useEffect(() => {
     if (!session?.expiresAt) return
@@ -291,6 +302,32 @@ function App() {
       </header>
 
       <main id="top" className="dashboard">
+        <nav className="section-nav" aria-label="Разделы приложения">
+          <button
+            className={activeSection === 'users' ? 'section-tab active' : 'section-tab'}
+            aria-current={activeSection === 'users' ? 'page' : undefined}
+            onClick={() => setActiveSection('users')}
+          >
+            <UsersRound size={17} /> Пользователи
+          </button>
+          <button
+            className={activeSection === 'tickets' ? 'section-tab active' : 'section-tab'}
+            aria-current={activeSection === 'tickets' ? 'page' : undefined}
+            onClick={() => setActiveSection('tickets')}
+          >
+            <Headset size={17} /> Служба поддержки
+          </button>
+        </nav>
+
+        {activeSection === 'tickets' ? (
+          <TicketsPanel
+            session={session}
+            showToast={showToast}
+            onError={handleError}
+            onConnectionChange={setApiOffline}
+          />
+        ) : (
+          <>
         <section className="hero-strip">
           <div>
             <span className="eyebrow"><Activity size={14} /> Центр поддержки и логистики</span>
@@ -329,7 +366,7 @@ function App() {
               ))}
               {!loading.users && filteredUsers.length === 0 && <EmptyState icon={Search} title="Ничего не найдено" text="Попробуйте изменить запрос." />}
             </div>
-            <div className="storage-note"><Database size={17} /><span><strong>Источник списка</strong><small>PostgreSQL · таблица users</small></span></div>
+            <div className="storage-note"><Database size={17} /><span><strong>Источник списка</strong><small>CouchDB · база users</small></span></div>
           </aside>
 
           <section className="work-area">
@@ -347,6 +384,8 @@ function App() {
             )}
           </section>
         </div>
+          </>
+        )}
       </main>
 
       {toast && <div className={`toast ${toast.tone}`}>{toast.tone === 'error' ? <AlertCircle size={19} /> : <CheckCircle2 size={19} />}<span>{toast.message}</span><button onClick={() => setToast(null)}><X size={16} /></button></div>}
@@ -373,7 +412,7 @@ function ProfileCard({ profile, loading, editing, setEditing, editForm, setEditF
       <div className="lab-indicators">
         <div className={`indicator ${profile.fromCache ? 'cache' : 'postgres'}`}>
           <span className="indicator-icon"><Database size={21} /></span>
-          <span><small>Источник данных</small><strong>{profile.fromCache ? 'Кэш Riak KV' : 'PostgreSQL'}</strong><em>{profile.fromCache ? 'CACHE HIT · быстро' : 'CACHE MISS · кэш заполнен'}</em></span>
+          <span><small>Источник данных</small><strong>{profile.fromCache ? 'Кэш Riak KV' : 'CouchDB'}</strong><em>{profile.fromCache ? 'CACHE HIT · быстро' : 'CACHE MISS · кэш заполнен'}</em></span>
           <Check size={18} />
         </div>
         <div className="indicator visits">

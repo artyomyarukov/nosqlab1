@@ -66,6 +66,35 @@ export const api = {
     }),
 
   history: (id) => request(`/api/users/${id}/history`),
+
+  searchTickets: (tag, fromDate, limit = 10, skip = 0, signal) => {
+    const params = new URLSearchParams({
+      tag,
+      fromDate,
+      limit: String(limit),
+      skip: String(skip),
+    })
+    return request('/api/tickets/search?' + params, { signal })
+  },
+
+  getTicket: (id, signal) =>
+    request('/api/tickets/' + encodeURIComponent(id), { signal }),
+
+  updateTicketStatus: (id, status, token) => {
+    const params = new URLSearchParams({ status })
+    return request('/api/tickets/' + encodeURIComponent(id) + '/status?' + params, {
+      method: 'PUT',
+      headers: authHeaders(token),
+    })
+  },
+
+  getAnalytics: (signal) => request('/api/tickets/analytics', { signal }),
+
+  migrateTickets: (token) =>
+    request('/api/tickets/migrate', {
+      method: 'POST',
+      headers: authHeaders(token),
+    }),
 }
 
 export { API_URL }

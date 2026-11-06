@@ -5,6 +5,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Repository;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Mono;
+import tools.jackson.databind.JsonNode;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Repository
@@ -79,19 +86,53 @@ public class CouchDbSystemDao {
 
     private void startContinuousReplication() {
         try {
-            String replicationJson = """
-                {
-                  "source": "http://admin:password@couchdb1:5984/tickets",
-                  "target": "http://admin:password@couchdb2:5984/tickets",
-                  "create_target": true,
-                  "continuous": true
-                }
-                """;
-            couchClient1.post().uri("/_replicator").bodyValue(replicationJson)
-                    .retrieve().toBodilessEntity().block();
-            log.info("Система: Непрерывная репликация (Continuous Replication) из couchdb1 в couchdb2 запущена в фоне!");
+            couchClient1.put().uri("/_replicator").retrieve().toBodilessEntity()
+                    .onErrorResume(WebClientResponseException.class, e ->
+                            e.getStatusCode().value() == 412 ? Mono.empty() : Mono.error(e))
+                    .block();
         } catch (Exception e) {
-            log.debug("Система: Репликация уже настроена или узлы недоступны");
+            log.error("Не удалось подготовить базу заданий репликации CouchDB", e);
+            return;
+        }
+
+        for (String database : List.of("users", "tickets")) {
+            configureReplication(database);
+        }
+    }
+
+    private void configureReplication(String database) {
+        String replicationId = database + "_replication";
+        String source = "http://admin:password@couchdb1:5984/" + database;
+        String target = "http://admin:password@couchdb2:5984/" + database;
+        String path = "/_replicator/" + replicationId;
+
+        try {
+            JsonNode existing = couchClient1.get().uri(path).retrieve().bodyToMono(JsonNode.class)
+                    .onErrorResume(WebClientResponseException.NotFound.class, e -> Mono.empty())
+                    .block();
+
+            if (existing != null
+                    && source.equals(existing.path("source").asText())
+                    && target.equals(existing.path("target").asText())
+                    && existing.path("continuous").asBoolean()
+                    && existing.path("create_target").asBoolean()) {
+                log.info("Непрерывная репликация базы '{}' уже настроена", database);
+                return;
+            }
+
+            Map<String, Object> replication = new HashMap<>(Map.of(
+                    "source", source,
+                    "target", target,
+                    "create_target", true,
+                    "continuous", true));
+            if (existing != null) {
+                replication.put("_rev", existing.path("_rev").asText());
+            }
+
+            couchClient1.put().uri(path).bodyValue(replication).retrieve().toBodilessEntity().block();
+            log.info("Непрерывная репликация базы '{}' из couchdb1 в couchdb2 настроена", database);
+        } catch (Exception e) {
+            log.error("Не удалось настроить репликацию базы '{}'", database, e);
         }
     }
 }
