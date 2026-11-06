@@ -21,17 +21,18 @@ public class CouchDbSystemDao {
         createMangoIndex();
         createMapReduceView();
         createValidationTrigger();
+        startContinuousReplication();
     }
 
     private void createMangoIndex() {
         try {
             String indexJson = """
-                {
-                  "index": { "fields": ["tags", "createdAt"] },
-                  "name": "tags_createdAt_index",
-                  "type": "json"
-                }
-                """;
+                    {
+                      "index": { "fields": ["tags", "createdAt"] },
+                      "name": "tags_createdAt_index",
+                      "type": "json"
+                    }
+                    """;
             couchClient1.post().uri("/tickets/_index").bodyValue(indexJson).retrieve().toBodilessEntity().block();
             log.info("Система: Mango-индекс (tags, createdAt) готов");
         } catch (Exception e) {
@@ -42,16 +43,16 @@ public class CouchDbSystemDao {
     private void createMapReduceView() {
         try {
             String designDoc = """
-                {
-                  "_id": "_design/analytics",
-                  "views": {
-                    "avg_changes_by_status": {
-                      "map": "function (doc) { if (doc.status && doc.changeCount) { emit(doc.status, doc.changeCount); } }",
-                      "reduce": "_stats"
+                    {
+                      "_id": "_design/analytics",
+                      "views": {
+                        "avg_changes_by_status": {
+                          "map": "function (doc) { if (doc.status && doc.changeCount) { emit(doc.status, doc.changeCount); } }",
+                          "reduce": "_stats"
+                        }
+                      }
                     }
-                  }
-                }
-                """;
+                    """;
             couchClient1.put().uri("/tickets/_design/analytics").
                     bodyValue(designDoc).retrieve().toBodilessEntity().block();
             log.info("Система: MapReduce View для аналитики готово");
@@ -64,11 +65,11 @@ public class CouchDbSystemDao {
     private void createValidationTrigger() {
         try {
             String validationDoc = """
-                {
-                  "_id": "_design/validation",
-                  "validate_doc_update": "function(newDoc, oldDoc, userCtx) { if (!newDoc.status) throw({forbidden: 'Статус тикета обязателен!'}); }"
-                }
-                """;
+                    {
+                      "_id": "_design/validation",
+                      "validate_doc_update": "function(newDoc, oldDoc, userCtx) { if (!newDoc.status) throw({forbidden: 'Статус тикета обязателен!'}); }"
+                    }
+                    """;
             couchClient1.put().uri("/tickets/_design/validation").bodyValue(validationDoc).retrieve().toBodilessEntity().block();
             log.info("Система: Триггер validate_doc_update установлен");
         } catch (Exception e) {
@@ -76,7 +77,7 @@ public class CouchDbSystemDao {
         }
     }
 
-    public void startReplication() {
+    private void startContinuousReplication() {
         try {
             String replicationJson = """
                 {
@@ -88,9 +89,9 @@ public class CouchDbSystemDao {
                 """;
             couchClient1.post().uri("/_replicator").bodyValue(replicationJson)
                     .retrieve().toBodilessEntity().block();
-            log.info("Система: Репликация из couchdb1 в couchdb2 успешно запущена!");
+            log.info("Система: Непрерывная репликация (Continuous Replication) из couchdb1 в couchdb2 запущена в фоне!");
         } catch (Exception e) {
-            log.error("Ошибка запуска репликации", e);
+            log.debug("Система: Репликация уже настроена или узлы недоступны");
         }
     }
 }
