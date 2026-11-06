@@ -1,16 +1,16 @@
 package com.yarukov.nosql.service;
 
-import com.yarukov.nosql.dao.ActionHistoryDao;
-import com.yarukov.nosql.dao.CounterDao;
-import com.yarukov.nosql.dao.UserCacheDao;
+import com.yarukov.nosql.dao.couchdb.UserCouchDao;
+import com.yarukov.nosql.dao.riak.ActionHistoryDao;
+import com.yarukov.nosql.dao.riak.CounterDao;
+import com.yarukov.nosql.dao.riak.UserCacheDao;
 import com.yarukov.nosql.dto.*;
+import com.yarukov.nosql.model.couchdb.UserDoc;
 import com.yarukov.nosql.model.entity.History;
-import com.yarukov.nosql.model.entity.User;
 import com.yarukov.nosql.model.riak.ActionEvent;
 import com.yarukov.nosql.model.riak.CachedUserProfile;
 import com.yarukov.nosql.model.riak.UserSession;
 import com.yarukov.nosql.repository.jpa.HistoryRepository;
-import com.yarukov.nosql.repository.jpa.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,20 +26,19 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserService {
 
-    private final UserRepository userRepository;
+    private final UserCouchDao userCouchDao;
     private final AuthService authService;
     private final HistoryRepository historyRepository;
-
 
     private final UserCacheDao userCacheDao;
     private final CounterDao counterDao;
     private final ActionHistoryDao actionHistoryDao;
 
     public List<UserListItemResponse> getAllUsers() {
-        return userRepository.findAll().stream()
+        return userCouchDao.findAll().stream()
                 .filter(u -> !"OPERATOR".equalsIgnoreCase(u.getRole()))
                 .map(u -> UserListItemResponse.builder()
-                        .id(u.getId())
+                        .id(Long.valueOf(u.getId()))
                         .username(u.getUsername())
                         .fullName(u.getFullName())
                         .role(u.getRole())
@@ -47,7 +46,7 @@ public class UserService {
                 .collect(Collectors.toList());
     }
 
-    public UserProfileResponse getUserProfile(Long userId) {
+    public UserProfileResponse getUserProfile(String userId) {
 
         counterDao.increment(userId);
         long visitCount = counterDao.getCount(userId);
@@ -58,7 +57,7 @@ public class UserService {
             log.info("CACHE HIT: Профиль пользователя id={} получен из Riak KV", userId);
             CachedUserProfile cached = cachedOpt.get();
             return UserProfileResponse.builder()
-                    .id(cached.getId())
+                    .id(Long.valueOf(cached.getId()))
                     .username(cached.getUsername())
                     .fullName(cached.getFullName())
                     .phone(cached.getPhone())
@@ -69,8 +68,8 @@ public class UserService {
                     .build();
         }
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("Пользователь с id=" + userId + " не найден"));
+        UserDoc user = userCouchDao.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Пользователь с id=" + userId + " не найден в CouchDB"));
 
         CachedUserProfile toCache = CachedUserProfile.builder()
                 .id(user.getId())
@@ -84,7 +83,7 @@ public class UserService {
         userCacheDao.save(toCache);
 
         return UserProfileResponse.builder()
-                .id(user.getId())
+                .id(Long.valueOf(user.getId()))
                 .username(user.getUsername())
                 .fullName(user.getFullName())
                 .phone(user.getPhone())
@@ -96,40 +95,43 @@ public class UserService {
     }
 
     @Transactional
-    public UserProfileResponse updateUserProfile(Long userId, UpdateUserRequest request, String token) {
+    public UserProfileResponse updateUserProfile(String userId, UpdateUserRequest request, String token) {
         UserSession session = authService.getActiveSessionOrThrow(token);
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+        UserDoc user = userCouchDao.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден в CouchDB"));
 
         if (request.getFullName() != null) user.setFullName(request.getFullName());
         if (request.getPhone() != null) user.setPhone(request.getPhone());
         if (request.getDeliveryAddress() != null) user.setDeliveryAddress(request.getDeliveryAddress());
-        userRepository.save(user);
+
+        // CouchDB вернет обновленный документ с новой ревизией _rev
+        userCouchDao.save(user);
+
         historyRepository.save(History.builder()
-                .userId(userId)
+                .userId(Long.valueOf(userId))
                 .action("PROFILE_UPDATED")
                 .operator(session.getOperatorName())
-                .details("Обновлен юзер")
+                .details("Обновлен профиль")
                 .timestamp(Instant.now())
                 .build());
+
         userCacheDao.deleteById(userId);
         actionHistoryDao.deleteByUserId(userId);
 
         return getUserProfile(userId);
     }
 
-
     @Transactional
-    public NotificationResponse sendNotification(Long userId, NotificationRequest request, String token) {
+    public NotificationResponse sendNotification(String userId, NotificationRequest request, String token) {
         UserSession session = authService.getActiveSessionOrThrow(token);
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+        UserDoc user = userCouchDao.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден в CouchDB"));
 
         Instant now = Instant.now();
         historyRepository.save(History.builder()
-                .userId(userId)
+                .userId(Long.valueOf(userId))
                 .action("NOTIFICATION_SENT [" + request.getType() + "]")
                 .operator(session.getOperatorName())
                 .details(request.getMessage())
@@ -146,14 +148,14 @@ public class UserService {
                 .build();
     }
 
-    public List<ActionEvent> getUserActionHistory(Long userId) {
+    public List<ActionEvent> getUserActionHistory(String userId) {
         Optional<List<ActionEvent>> cachedHistory = actionHistoryDao.findByUserId(userId);
         if (cachedHistory.isPresent()) {
             log.info("CACHE HIT: История пользователя id={} получена из Riak KV", userId);
             return cachedHistory.get();
         }
         log.info("CACHE MISS: Загрузка истории действий id={} из PostgreSQL", userId);
-        List<ActionEvent> history = historyRepository.findByUserIdOrderByTimestampDesc(userId).stream()
+        List<ActionEvent> history = historyRepository.findByUserIdOrderByTimestampDesc(Long.valueOf(userId)).stream()
                 .map(h -> ActionEvent.builder()
                         .action(h.getAction())
                         .operator(h.getOperator())

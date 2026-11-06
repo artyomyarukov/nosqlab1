@@ -1,4 +1,4 @@
-package com.yarukov.nosql.dao;
+package com.yarukov.nosql.dao.riak;
 
 import com.basho.riak.client.api.RiakClient;
 import com.basho.riak.client.api.commands.kv.DeleteValue;
@@ -17,7 +17,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -36,7 +35,7 @@ public class ActionHistoryDao {
         this.objectMapper.registerModule(new JavaTimeModule());
     }
 
-    public void save(Long userId, List<ActionEvent> history) {
+    public void save(String userId, List<ActionEvent> history) {
         try {
             byte[] bytes = objectMapper.writeValueAsBytes(history);;
             Location location = new Location(HISTORY_NS, String.valueOf(userId));
@@ -52,9 +51,9 @@ public class ActionHistoryDao {
         }
     }
 
-    public Optional<List<ActionEvent>> findByUserId(Long userId) {
+    public Optional<List<ActionEvent>> findByUserId(String userId) {
         try {
-            Location location = new Location(HISTORY_NS, String.valueOf(userId));
+            Location location = new Location(HISTORY_NS, userId);
             FetchValue fetch = new FetchValue.Builder(location).build();
             FetchValue.Response response = riakClient.execute(fetch);
 
@@ -72,9 +71,9 @@ public class ActionHistoryDao {
         }
     }
 
-    public void deleteByUserId(Long userId) {
+    public void deleteByUserId(String userId) {
         try {
-            Location location = new Location(HISTORY_NS, String.valueOf(userId));
+            Location location = new Location(HISTORY_NS, userId);
             DeleteValue delete = new DeleteValue.Builder(location).build();
             riakClient.execute(delete);
             log.info("Кэш истории действий id={} сброшен в Riak", userId);

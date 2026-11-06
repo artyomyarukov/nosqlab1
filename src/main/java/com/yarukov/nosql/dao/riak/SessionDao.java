@@ -1,4 +1,4 @@
-package com.yarukov.nosql.dao;
+package com.yarukov.nosql.dao.riak;
 
 import com.basho.riak.client.api.RiakClient;
 import com.basho.riak.client.api.commands.kv.DeleteValue;

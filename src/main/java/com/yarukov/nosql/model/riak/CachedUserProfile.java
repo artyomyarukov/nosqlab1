@@ -12,7 +12,7 @@ import java.time.Instant;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CachedUserProfile {
-    private Long id;
+    private String id;
     private String username;
     private String fullName;
     private String phone;

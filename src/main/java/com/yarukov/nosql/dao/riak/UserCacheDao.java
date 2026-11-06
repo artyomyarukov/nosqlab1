@@ -1,4 +1,4 @@
-package com.yarukov.nosql.dao;
+package com.yarukov.nosql.dao.riak;
 
 import com.basho.riak.client.api.RiakClient;
 import com.basho.riak.client.api.commands.kv.DeleteValue;
@@ -49,9 +49,9 @@ public class UserCacheDao {
         }
     }
 
-    public Optional<CachedUserProfile> findById(Long userId) {
+    public Optional<CachedUserProfile> findById(String userId) {
         try {
-            Location location = new Location(PROFILES_NS, String.valueOf(userId));
+            Location location = new Location(PROFILES_NS, userId);
             FetchValue fetch = new FetchValue.Builder(location).build();
             FetchValue.Response response = riakClient.execute(fetch);
 
@@ -68,7 +68,7 @@ public class UserCacheDao {
         }
     }
 
-    public void deleteById(Long userId) {
+    public void deleteById(String userId) {
         try {
             Location location = new Location(PROFILES_NS, String.valueOf(userId));
             DeleteValue delete = new DeleteValue.Builder(location).build();
