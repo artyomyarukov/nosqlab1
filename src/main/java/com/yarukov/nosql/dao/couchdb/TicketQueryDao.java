@@ -1,17 +1,17 @@
 package com.yarukov.nosql.dao.couchdb;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.yarukov.nosql.model.couchdb.TicketDoc;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Repository;
 import org.springframework.web.reactive.function.client.WebClient;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Repository
@@ -28,26 +28,21 @@ public class TicketQueryDao {
     @PostConstruct
     public void init() {
         this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
 
     public List<TicketDoc> findByTagsAndDate(String tag, String fromDate, int limit, int skip) {
         List<TicketDoc> result = new ArrayList<>();
         try {
-            String queryJson = String.format("""
-                {
-                  "selector": {
-                    "tags": { "$elemMatch": { "$eq": "%s" } },
-                    "createdAt": { "$gte": "%s" }
-                  },
-                  "limit": %d,
-                  "skip": %d,
-                  "use_index": "tags_createdAt_index"
-                }
-                """, tag, fromDate, limit, skip);
+            Map<String, Object> query = Map.of(
+                    "selector", Map.of(
+                            "tags", Map.of("$elemMatch", Map.of("$eq", tag)),
+                            "createdAt", Map.of("$gte", fromDate)),
+                    "limit", limit,
+                    "skip", skip,
+                    "use_index", "tags_createdAt_index");
 
-            JsonNode root = couchClient.post().uri(DB + "/_find").bodyValue(queryJson)
+            JsonNode root = couchClient.post().uri(DB + "/_find").bodyValue(query)
                     .retrieve().bodyToMono(JsonNode.class).block();
 
             if (root != null && root.has("docs")) {
@@ -57,22 +52,19 @@ public class TicketQueryDao {
             }
         } catch (Exception e) {
             log.error("Ошибка Mango-поиска тикетов", e);
+            throw new RuntimeException("Не удалось выполнить поиск обращений в CouchDB", e);
         }
         return result;
     }
 
     public JsonNode explainFindByTagsAndDate(String tag, String fromDate) {
-        String queryJson = String.format("""
-            {
-              "selector": {
-                "tags": { "$elemMatch": { "$eq": "%s" } },
-                "createdAt": { "$gte": "%s" }
-              },
-              "use_index": "tags_createdAt_index"
-            }
-            """, tag, fromDate);
+        Map<String, Object> query = Map.of(
+                "selector", Map.of(
+                        "tags", Map.of("$elemMatch", Map.of("$eq", tag)),
+                        "createdAt", Map.of("$gte", fromDate)),
+                "use_index", "tags_createdAt_index");
 
-        return couchClient.post().uri(DB + "/_explain").bodyValue(queryJson)
+        return couchClient.post().uri(DB + "/_explain").bodyValue(query)
                 .retrieve().bodyToMono(JsonNode.class).block();
     }
 

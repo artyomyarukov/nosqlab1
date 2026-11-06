@@ -1,16 +1,15 @@
 package com.yarukov.nosql.dao.couchdb;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.yarukov.nosql.model.couchdb.UserDoc;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Repository;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,15 +31,10 @@ public class UserCouchDao {
     @PostConstruct
     public void init() {
         this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
     public UserDoc save(UserDoc user) {
         try {
-            if (user.getRev() == null && user.getId() != null) {
-                findById(user.getId()).ifPresent(existing -> user.setRev(existing.getRev()));
-            }
-
             JsonNode response = couchClient.put()
                     .uri(DB + "/" + user.getId())
                     .bodyValue(user)
@@ -65,12 +59,12 @@ public class UserCouchDao {
             UserDoc doc = couchClient.get()
                     .uri(DB + "/" + id)
                     .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, resp -> Mono.empty())
                     .bodyToMono(UserDoc.class)
+                    .onErrorResume(WebClientResponseException.NotFound.class, e -> Mono.empty())
                     .block();
             return Optional.ofNullable(doc);
         } catch (Exception e) {
-            return Optional.empty();
+            throw new RuntimeException("Не удалось прочитать документ из CouchDB", e);
         }
     }
 
@@ -93,6 +87,7 @@ public class UserCouchDao {
             }
         } catch (Exception e) {
             log.error("Ошибка получения списка пользователей из CouchDB", e);
+            throw new RuntimeException("Не удалось получить список пользователей из CouchDB", e);
         }
         return users;
     }
@@ -114,6 +109,7 @@ public class UserCouchDao {
             }
         } catch (Exception e) {
             log.error("Ошибка поиска пользователя по username в CouchDB", e);
+            throw new RuntimeException("Не удалось найти пользователя в CouchDB", e);
         }
         return Optional.empty();
     }

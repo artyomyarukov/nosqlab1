@@ -38,7 +38,7 @@ public class UserService {
         return userCouchDao.findAll().stream()
                 .filter(u -> !"OPERATOR".equalsIgnoreCase(u.getRole()))
                 .map(u -> UserListItemResponse.builder()
-                        .id(Long.valueOf(u.getId()))
+                        .id(u.getId())
                         .username(u.getUsername())
                         .fullName(u.getFullName())
                         .role(u.getRole())
@@ -57,7 +57,7 @@ public class UserService {
             log.info("CACHE HIT: Профиль пользователя id={} получен из Riak KV", userId);
             CachedUserProfile cached = cachedOpt.get();
             return UserProfileResponse.builder()
-                    .id(Long.valueOf(cached.getId()))
+                    .id(cached.getId())
                     .username(cached.getUsername())
                     .fullName(cached.getFullName())
                     .phone(cached.getPhone())
@@ -83,7 +83,7 @@ public class UserService {
         userCacheDao.save(toCache);
 
         return UserProfileResponse.builder()
-                .id(Long.valueOf(user.getId()))
+                .id(user.getId())
                 .username(user.getUsername())
                 .fullName(user.getFullName())
                 .phone(user.getPhone())
@@ -109,7 +109,7 @@ public class UserService {
         userCouchDao.save(user);
 
         historyRepository.save(History.builder()
-                .userId(Long.valueOf(userId))
+                .userId(userId)
                 .action("PROFILE_UPDATED")
                 .operator(session.getOperatorName())
                 .details("Обновлен профиль")
@@ -131,7 +131,7 @@ public class UserService {
 
         Instant now = Instant.now();
         historyRepository.save(History.builder()
-                .userId(Long.valueOf(userId))
+                .userId(userId)
                 .action("NOTIFICATION_SENT [" + request.getType() + "]")
                 .operator(session.getOperatorName())
                 .details(request.getMessage())
@@ -155,7 +155,7 @@ public class UserService {
             return cachedHistory.get();
         }
         log.info("CACHE MISS: Загрузка истории действий id={} из PostgreSQL", userId);
-        List<ActionEvent> history = historyRepository.findByUserIdOrderByTimestampDesc(Long.valueOf(userId)).stream()
+        List<ActionEvent> history = historyRepository.findByUserIdOrderByTimestampDesc(userId).stream()
                 .map(h -> ActionEvent.builder()
                         .action(h.getAction())
                         .operator(h.getOperator())

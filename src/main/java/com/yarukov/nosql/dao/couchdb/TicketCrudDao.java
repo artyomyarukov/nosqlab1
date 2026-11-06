@@ -1,17 +1,15 @@
 package com.yarukov.nosql.dao.couchdb;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.yarukov.nosql.model.couchdb.TicketDoc;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Repository;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,15 +29,11 @@ public class TicketCrudDao {
     @PostConstruct
     public void init() {
         this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
     }
 
 
     public TicketDoc save(TicketDoc ticket) {
         try {
-            if (ticket.getRev() == null && ticket.getId() != null) {
-                findById(ticket.getId()).ifPresent(existing -> ticket.setRev(existing.getRev()));
-            }
             JsonNode response = couchClient.put()
                     .uri(DB + "/" + ticket.getId())
                     .bodyValue(ticket)
@@ -63,12 +57,12 @@ public class TicketCrudDao {
             TicketDoc doc = couchClient.get()
                     .uri(DB + "/" + id)
                     .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, resp -> Mono.empty())
                     .bodyToMono(TicketDoc.class)
+                    .onErrorResume(WebClientResponseException.NotFound.class, e -> Mono.empty())
                     .block();
             return Optional.ofNullable(doc);
         } catch (Exception e) {
-            return Optional.empty();
+            throw new RuntimeException("Не удалось прочитать документ из CouchDB", e);
         }
     }
 
@@ -91,6 +85,7 @@ public class TicketCrudDao {
             }
         } catch (Exception e) {
             log.error("Ошибка получения всех тикетов", e);
+            throw new RuntimeException("Не удалось получить обращения из CouchDB", e);
         }
         return tickets;
     }

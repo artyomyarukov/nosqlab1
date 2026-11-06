@@ -1,11 +1,11 @@
 package com.yarukov.nosql.controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.yarukov.nosql.model.couchdb.TicketDoc;
 import com.yarukov.nosql.service.TicketService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import tools.jackson.databind.JsonNode;
 
 import java.util.List;
 import java.util.Map;
