@@ -105,7 +105,7 @@ public class UserService {
         if (request.getPhone() != null) user.setPhone(request.getPhone());
         if (request.getDeliveryAddress() != null) user.setDeliveryAddress(request.getDeliveryAddress());
 
-        // CouchDB вернет обновленный документ с новой ревизией _rev
+
         userCouchDao.save(user);
 
         historyRepository.save(History.builder()

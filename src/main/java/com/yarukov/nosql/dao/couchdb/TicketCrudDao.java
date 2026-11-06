@@ -46,11 +46,14 @@ public class TicketCrudDao {
             if (response != null && response.has("rev")) {
                 ticket.setRev(response.get("rev").asText());
             }
-            log.info("Тикет id={} сохранен в CouchDB (rev={})", ticket.getId(), ticket.getRev());
             return ticket;
-        } catch (Exception e) {
-            log.error("Ошибка сохранения тикета", e);
-            throw new RuntimeException("Не удалось сохранить тикет в CouchDB", e);
+        } catch (WebClientResponseException.Conflict e) {
+            log.warn("КОНФЛИКТ ИЗМЕНЕНИЙ (409 Conflict): документ id={} был изменен другим оператором!", ticket.getId());
+            String latestRev = findById(ticket.getId())
+                    .map(TicketDoc::getRev)
+                    .orElseThrow(() -> new RuntimeException("Документ удален"));
+            ticket.setRev(latestRev);
+            return save(ticket);
         }
     }
 

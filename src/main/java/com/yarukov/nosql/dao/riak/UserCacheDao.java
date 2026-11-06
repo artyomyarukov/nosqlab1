@@ -3,6 +3,7 @@ package com.yarukov.nosql.dao.riak;
 import com.basho.riak.client.api.RiakClient;
 import com.basho.riak.client.api.commands.kv.DeleteValue;
 import com.basho.riak.client.api.commands.kv.FetchValue;
+import com.basho.riak.client.api.commands.kv.ListKeys;
 import com.basho.riak.client.api.commands.kv.StoreValue;
 import com.basho.riak.client.core.query.Location;
 import com.basho.riak.client.core.query.Namespace;
@@ -14,6 +15,7 @@ import com.yarukov.nosql.model.riak.CachedUserProfile;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
@@ -61,6 +63,15 @@ public class UserCacheDao {
 
             RiakObject obj = response.getValue(RiakObject.class);
             CachedUserProfile profile = objectMapper.readValue(obj.getValue().getValue(), CachedUserProfile.class);
+            if (profile.getCachedAt() != null &&
+                    java.time.Instant.now().
+                            isAfter(profile.getCachedAt().
+                                    plus(10, java.time.temporal.ChronoUnit.MINUTES)))
+            {
+                deleteById(userId);
+                return Optional.empty();
+            }
+
             return Optional.of(profile);
         } catch (Exception e) {
             log.error("Ошибка чтения кэша профиля из Riak", e);
@@ -78,4 +89,27 @@ public class UserCacheDao {
             log.error("Ошибка инвалидации кэша в Riak", e);
         }
     }
+
+
+    @Scheduled(fixedRate = 60000)
+    public void cleanupExpiredUserCaches() {
+        try {
+            ListKeys listKeys = new ListKeys.Builder(PROFILES_NS).build();
+            ListKeys.Response response = riakClient.execute(listKeys);
+
+            int cleaned = 0;
+            for (Location location : response) {
+                if (findById(location.getKeyAsString()).isEmpty()) {
+                    cleaned++;
+                }
+            }
+            if (cleaned > 0) {
+                log.info("автоматически удалено {} протухших кэшей профилей из Riak KV", cleaned);
+            }
+        } catch (Exception e) {
+            log.error("Ошибка при фоновой очистке кэша профилей в Riak", e);
+        }
+    }
 }
+
+
