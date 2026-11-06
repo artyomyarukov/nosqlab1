@@ -31,8 +31,9 @@ public class TicketDoc {
     private UserDoc embeddedUser;
     private String userId;
 
+
     @Builder.Default
-    private List<String> tags = new ArrayList<>();
+    private List<TicketTag> tags = new ArrayList<>();
     private Instant createdAt;
 
     @Builder.Default

@@ -1,6 +1,7 @@
 package com.yarukov.nosql.controller;
 
 import com.yarukov.nosql.model.couchdb.TicketDoc;
+import com.yarukov.nosql.model.couchdb.TicketTag;
 import com.yarukov.nosql.service.TicketService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -67,5 +68,9 @@ public class TicketController {
             @RequestHeader("X-Session-Token") String token) {
         String result = ticketService.runMigration(token);
         return ResponseEntity.ok(Map.of("message", result));
+    }
+    @GetMapping("/tags")
+    public ResponseEntity<List<TicketTag>> getAvailableTags() {
+        return ResponseEntity.ok(List.of(TicketTag.values()));
     }
 }

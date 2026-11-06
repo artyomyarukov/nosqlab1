@@ -53,7 +53,7 @@ public class CouchDbConfig {
 
     @PostConstruct
     public void initDatabases() {
-        WebClient client = couchDbClient1();
+        WebClient client = createWebClient(node1Url);
         createDatabaseIfNotExists(client, "users");
         createDatabaseIfNotExists(client, "tickets");
     }
@@ -65,9 +65,9 @@ public class CouchDbConfig {
                     .retrieve()
                     .onStatus(HttpStatusCode::is4xxClientError, response -> {
                         if (response.statusCode().value() == 404) {
-                            log.info("База данных '{}' не найдена в CouchDB", dbName);
+                            log.info("База данных '{}' не найдена в CouchDB. Создаем...", dbName);
                             client.put().uri("/" + dbName).retrieve().toBodilessEntity().block();
-                            log.info("База данных '{}' успешно создана в CouchDB", dbName);
+                            log.info("База данных '{}' успешно создана в CouchDB!", dbName);
                         }
                         return response.createException();
                     })
