@@ -47,7 +47,7 @@ export const api = {
       headers: authHeaders(token),
     }),
 
-  users: () => request('/api/users'),
+  users: (signal) => request('/api/users', { signal }),
 
   profile: (id) => request(`/api/users/${id}`),
 
@@ -66,6 +66,17 @@ export const api = {
     }),
 
   history: (id) => request(`/api/users/${id}/history`),
+
+  getTickets: (signal) => request('/api/tickets', { signal }),
+
+  getTicketTags: (signal) => request('/api/tickets/tags', { signal }),
+
+  createTicket: (payload, token) =>
+    request('/api/tickets', {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ ...payload, changeCount: 1 }),
+    }),
 
   searchTickets: (tag, fromDate, limit = 10, skip = 0, signal) => {
     const params = new URLSearchParams({

@@ -67,6 +67,10 @@ public class TicketService {
         return ticketCrudDao.save(ticket);
     }
 
+    public List<TicketDoc> getAllTickets() {
+        return ticketCrudDao.findAll();
+    }
+
     public Optional<TicketDoc> getTicket(String id) {
         return ticketCrudDao.findById(id);
     }

@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import {
   AlertCircle, ArrowLeft, ArrowRight, BarChart3, CalendarDays, Check,
   ChevronRight, Clock3, Database, FileText, Headset, LoaderCircle,
-  Paperclip, RefreshCw, Search, ShieldCheck, Tag, UserRound,
+  Paperclip, Plus, RefreshCw, Search, ShieldCheck, Tag, UserRound,
 } from 'lucide-react'
 import { api } from './api'
+import CreateTicketForm from './CreateTicketForm'
 import './tickets.css'
 
 const PAGE_SIZE = 10
@@ -14,15 +15,18 @@ const STATUSES = [
   { code: 'RESOLVED', label: 'Решено', tone: 'resolved' },
   { code: 'CLOSED', label: 'Закрыто', tone: 'closed' },
 ]
-const TAGS = ['cold_food', 'late_delivery', 'urgent', 'refund', 'complaint', 'client_issue', 'missing_item']
 
 function ticketId(ticket) {
   return ticket?._id ?? ticket?.id
 }
 
+function dateTimestamp(value) {
+  if (value == null) return NaN
+  return new Date(typeof value === 'number' && value < 1e11 ? value * 1000 : value).getTime()
+}
+
 function dateLabel(value) {
-  if (value == null) return 'Дата не указана'
-  const date = new Date(typeof value === 'number' && value < 1e11 ? value * 1000 : value)
+  const date = new Date(dateTimestamp(value))
   if (Number.isNaN(date.getTime())) return 'Дата не указана'
   return new Intl.DateTimeFormat('ru-RU', {
     day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -49,14 +53,6 @@ function analyticsValues(data) {
   }))
 }
 
-function initialFilters() {
-  return {
-    tag: 'cold_food',
-    fromDate: new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
-    skip: 0,
-  }
-}
-
 function StatusBadge({ status }) {
   const item = STATUSES.find((value) => value.code === status)
   return (
@@ -77,7 +73,7 @@ function ErrorNotice({ message, retry }) {
 }
 
 export default function TicketsPanel({ session, showToast, onError, onConnectionChange }) {
-  const [query, setQuery] = useState(initialFilters)
+  const [query, setQuery] = useState({ mode: 'all', tag: '', fromDate: '', skip: 0 })
   const [filters, setFilters] = useState(() => ({ tag: query.tag, fromDate: query.fromDate }))
   const [tickets, setTickets] = useState([])
   const [selectedId, setSelectedId] = useState(null)
@@ -93,22 +89,63 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
   const [analyticsError, setAnalyticsError] = useState('')
   const [updating, setUpdating] = useState(false)
   const [migrating, setMigrating] = useState(false)
+  const [tags, setTags] = useState([])
+  const [tagsLoading, setTagsLoading] = useState(true)
+  const [tagsError, setTagsError] = useState('')
+  const [tagsVersion, setTagsVersion] = useState(0)
+  const [creating, setCreating] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [creationError, setCreationError] = useState('')
   const selection = useRef(selectedId)
   selection.current = selectedId
-  const busy = updating || migrating
+  const busy = updating || migrating || saving
   const authorized = Boolean(session?.token)
+
+  const visibleTickets = query.mode === 'all' ? tickets.slice(query.skip, query.skip + PAGE_SIZE) : tickets
+  const hasNextPage = query.mode === 'all' ? query.skip + PAGE_SIZE < tickets.length : tickets.length === PAGE_SIZE
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setTagsLoading(true)
+    setTagsError('')
+    api.getTicketTags(controller.signal)
+      .then((data) => {
+        if (controller.signal.aborted) return
+        if (!Array.isArray(data) || !data.every((tag) => typeof tag === 'string' && tag.length > 0)) {
+          throw new Error('Сервис вернул некорректный список меток')
+        }
+        setTags([...new Set(data)])
+        onConnectionChange(false)
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return
+        setTags([])
+        setTagsError(error.message || 'Не удалось загрузить метки')
+        onError(error, 'Не удалось загрузить метки')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setTagsLoading(false)
+      })
+    return () => controller.abort()
+  }, [tagsVersion, onError, onConnectionChange])
 
   useEffect(() => {
     const controller = new AbortController()
     setSearchLoading(true)
     setSearchError('')
-    const fromDate = new Date(query.fromDate + 'T00:00:00').toISOString()
-    api.searchTickets(query.tag, fromDate, PAGE_SIZE, query.skip, controller.signal)
+    const load = query.mode === 'all'
+      ? api.getTickets(controller.signal)
+      : api.searchTickets(query.tag, new Date(query.fromDate + 'T00:00:00').toISOString(), PAGE_SIZE, query.skip, controller.signal)
+    load
       .then((data) => {
         if (controller.signal.aborted) return
         if (!Array.isArray(data)) throw new Error('Сервис вернул некорректный список обращений')
-        setTickets(data)
-        setSelectedId((current) => data.some((ticket) => ticketId(ticket) === current) ? current : ticketId(data[0]) ?? null)
+        const sorted = query.mode === 'all'
+          ? [...data].sort((left, right) => (dateTimestamp(right.createdAt) || 0) - (dateTimestamp(left.createdAt) || 0))
+          : data
+        const page = query.mode === 'all' ? sorted.slice(query.skip, query.skip + PAGE_SIZE) : sorted
+        setTickets(sorted)
+        setSelectedId((current) => page.some((ticket) => ticketId(ticket) === current) ? current : ticketId(page[0]) ?? null)
         onConnectionChange(false)
       })
       .catch((error) => {
@@ -174,8 +211,37 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
 
   function search(event) {
     event.preventDefault()
-    if (!filters.tag.trim() || !filters.fromDate || busy) return
-    setQuery({ tag: filters.tag.trim(), fromDate: filters.fromDate, skip: 0 })
+    if (!tags.includes(filters.tag) || !filters.fromDate || busy || tagsLoading || tagsError) return
+    setQuery({ mode: 'search', tag: filters.tag, fromDate: filters.fromDate, skip: 0 })
+  }
+
+  function showAll() {
+    setFilters({ tag: '', fromDate: '' })
+    setQuery({ mode: 'all', tag: '', fromDate: '', skip: 0 })
+  }
+
+  async function createTicket(payload) {
+    if (!authorized) return showToast('Сначала войдите как оператор', 'error')
+    if (busy) return
+    setSaving(true)
+    setCreationError('')
+    try {
+      const created = await api.createTicket(payload, session.token)
+      if (!ticketId(created)) throw new Error('Сервис вернул некорректное обращение')
+      setSelectedId(ticketId(created))
+      setDetail(created)
+      setCreating(false)
+      showAll()
+      setDetailVersion((current) => current + 1)
+      setAnalyticsVersion((current) => current + 1)
+      onConnectionChange(false)
+      showToast('Обращение создано')
+    } catch (error) {
+      setCreationError(error.message || 'Не удалось создать обращение')
+      onError(error, 'Не удалось создать обращение')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function changeStatus(status) {
@@ -223,7 +289,14 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
           <h1 id="tickets-title">Служба поддержки</h1>
           <p>Каждое обращение — под контролем. От первого сообщения до решения.</p>
         </div>
-        <span className="support-live"><span /> Центр обращений</span>
+        <div className="support-actions">
+          <button className="button primary new-ticket-button" disabled={!authorized || busy || creating}
+            title={!authorized ? 'Войдите как оператор' : undefined}
+            onClick={() => { setCreationError(''); setCreating(true) }}>
+            <Plus size={17} /> Новое обращение
+          </button>
+          {!authorized && <span className="auth-hint">Для создания войдите как оператор.</span>}
+        </div>
       </header>
 
       <section className="ticket-analytics card" aria-labelledby="analytics-title" aria-busy={analyticsLoading}>
@@ -260,10 +333,12 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
             <label htmlFor="ticket-tag">Метка (Tag)</label>
             <div className="ticket-input">
               <Tag size={16} />
-              <input id="ticket-tag" list="ticket-tags" value={filters.tag} placeholder="Например, cold_food"
+              <select id="ticket-tag" value={filters.tag}
                 onChange={(event) => setFilters((current) => ({ ...current, tag: event.target.value }))}
-                required disabled={busy} />
-              <datalist id="ticket-tags">{TAGS.map((tag) => <option key={tag} value={tag} />)}</datalist>
+                required disabled={busy || tagsLoading || Boolean(tagsError)}>
+                <option value="" disabled>{tagsLoading ? 'Загружаем метки…' : 'Выберите метку'}</option>
+                {tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+              </select>
             </div>
             <label htmlFor="ticket-from-date">Дата создания от</label>
             <div className="ticket-input">
@@ -272,24 +347,27 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
                 onChange={(event) => setFilters((current) => ({ ...current, fromDate: event.target.value }))}
                 required disabled={busy} />
             </div>
-            <button className="button primary" disabled={searchLoading || busy}>
+            <button className="button primary" disabled={searchLoading || busy || tagsLoading || Boolean(tagsError) || !tags.includes(filters.tag) || !filters.fromDate}>
               {searchLoading ? <LoaderCircle className="spin" size={16} /> : <Search size={16} />} Найти
             </button>
+            <button type="button" className="button ticket-reset" onClick={showAll}
+              disabled={searchLoading || busy}>Показать все обращения</button>
           </form>
+          {tagsError && <ErrorNotice message={tagsError} retry={() => setTagsVersion((current) => current + 1)} />}
 
           <div className="ticket-results-heading">
-            <strong>Результаты поиска</strong>
-            <span>{searchLoading ? 'Загрузка…' : tickets.length + ' на странице'}</span>
+            <strong>{query.mode === 'all' ? 'Все обращения' : 'Результаты поиска'}</strong>
+            <span>{searchLoading ? 'Загрузка…' : query.mode === 'all' ? 'Всего: ' + tickets.length : tickets.length + ' на странице'}</span>
           </div>
           {searchError ? <ErrorNotice message={searchError} retry={() => setQuery((current) => ({ ...current }))} /> : (
             <div className="ticket-results" aria-busy={searchLoading}>
               {searchLoading ? <Loading label="Ищем обращения" /> : tickets.length === 0 ? (
-                <Empty icon={Search} title="Обращений не найдено" text="Попробуйте другую метку или более раннюю дату." />
-              ) : tickets.map((ticket) => (
+                <Empty icon={Search} title="Обращений не найдено" text={query.mode === 'all' ? 'Создайте первое обращение с помощью кнопки выше.' : 'Попробуйте другую метку или более раннюю дату.'} />
+              ) : visibleTickets.map((ticket) => (
                 <button key={ticketId(ticket)}
                   className={'ticket-row' + (selectedId === ticketId(ticket) ? ' active' : '')}
                   aria-pressed={selectedId === ticketId(ticket)}
-                  disabled={busy} onClick={() => setSelectedId(ticketId(ticket))}>
+                  disabled={busy || creating} onClick={() => setSelectedId(ticketId(ticket))}>
                   <span className="ticket-row-top"><StatusBadge status={ticket.status} /><ChevronRight size={16} /></span>
                   <strong>{ticket.title || 'Без заголовка'}</strong>
                   <time>{dateLabel(ticket.createdAt)}</time>
@@ -305,7 +383,7 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
             </button>
             <span>Страница {Math.floor(query.skip / PAGE_SIZE) + 1}</span>
             <button className="icon-button bordered" aria-label="Следующая страница"
-              disabled={tickets.length < PAGE_SIZE || searchLoading || busy || Boolean(searchError)}
+              disabled={!hasNextPage || searchLoading || busy || Boolean(searchError)}
               onClick={() => setQuery((current) => ({ ...current, skip: current.skip + PAGE_SIZE }))}>
               <ArrowRight size={16} />
             </button>
@@ -315,7 +393,13 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
 
         <div className="ticket-work-area">
           <article className="ticket-detail card" aria-busy={detailLoading}>
-            {detailLoading ? <Loading label="Открываем обращение" /> : detailError ? (
+            {creating ? (
+              <CreateTicketForm tags={tags} tagsLoading={tagsLoading} tagsError={tagsError}
+                onRetryTags={() => setTagsVersion((current) => current + 1)}
+                authorized={authorized} saving={saving} error={creationError}
+                onCreate={createTicket} onCancel={() => setCreating(false)}
+                onError={onError} onConnectionChange={onConnectionChange} />
+            ) : detailLoading ? <Loading label="Открываем обращение" /> : detailError ? (
               <ErrorNotice message={detailError} retry={() => setDetailVersion((current) => current + 1)} />
             ) : detail ? (
               <TicketDetail ticket={detail} authorized={authorized} busy={busy || searchLoading}
@@ -333,7 +417,7 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
               </div>
             </div>
             <button className="button migration-button" onClick={migrate}
-              disabled={!authorized || busy || searchLoading} title={!authorized ? 'Войдите как оператор' : undefined}>
+              disabled={!authorized || busy || creating || searchLoading} title={!authorized ? 'Войдите как оператор' : undefined}>
               {migrating ? <LoaderCircle size={16} className="spin" /> : <RefreshCw size={16} />}
               {migrating ? 'Выполняется миграция…' : 'Запустить миграцию БД (v1 -> v2)'}
             </button>

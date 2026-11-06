@@ -25,6 +25,11 @@ public class TicketController {
         return ResponseEntity.ok(ticketService.createTicket(ticket, token));
     }
 
+    @GetMapping
+    public ResponseEntity<List<TicketDoc>> getAllTickets() {
+        return ResponseEntity.ok(ticketService.getAllTickets());
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<TicketDoc> getTicket(@PathVariable String id) {
         return ticketService.getTicket(id)
