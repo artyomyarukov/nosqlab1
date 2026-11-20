@@ -82,10 +82,25 @@ services:
       food_network:
         ipv4_address: 172.23.0.22
 
+  couchdb3:
+    image: couchdb:3.3.3
+    container_name: couchdb3
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+    ports:
+      - "5986:5984"
+    volumes:
+      - couchdb3_data:/opt/couchdb/data
+    networks:
+      food_network:
+        ipv4_address: 172.23.0.23
+
 volumes:
   postgres_data_17:
   couchdb1_data:
   couchdb2_data:
+  couchdb3_data:
 
 networks:
   food_network:

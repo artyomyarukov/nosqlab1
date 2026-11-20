@@ -75,7 +75,7 @@ export const api = {
     request('/api/tickets', {
       method: 'POST',
       headers: authHeaders(token),
-      body: JSON.stringify({ ...payload, changeCount: 1 }),
+      body: JSON.stringify(payload),
     }),
 
   searchTickets: (tag, fromDate, limit = 10, skip = 0, signal) => {
@@ -93,11 +93,12 @@ export const api = {
     return request('/api/tickets/search/by-attachment?' + params, { signal })
   },
 
-  getTicket: (id, signal) =>
-    request('/api/tickets/' + encodeURIComponent(id), { signal }),
+  getTicket: (id, signal, fresh = false) =>
+    request('/api/tickets/' + encodeURIComponent(id) + (fresh ? '?fresh=true' : ''), { signal }),
 
-  updateTicketStatus: (id, status, token) => {
+  updateTicketStatus: (id, status, token, rev) => {
     const params = new URLSearchParams({ status })
+    if (rev) params.set('rev', rev)
     return request('/api/tickets/' + encodeURIComponent(id) + '/status?' + params, {
       method: 'PUT',
       headers: authHeaders(token),

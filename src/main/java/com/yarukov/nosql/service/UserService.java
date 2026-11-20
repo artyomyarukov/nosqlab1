@@ -1,5 +1,6 @@
 package com.yarukov.nosql.service;
 
+import com.yarukov.nosql.dao.couchdb.CouchDbReadDao.Source;
 import com.yarukov.nosql.dao.couchdb.UserCouchDao;
 import com.yarukov.nosql.dao.riak.ActionHistoryDao;
 import com.yarukov.nosql.dao.riak.CounterDao;
@@ -47,6 +48,10 @@ public class UserService {
     }
 
     public UserProfileResponse getUserProfile(String userId) {
+        return getUserProfile(userId, Source.REPLICAS);
+    }
+
+    private UserProfileResponse getUserProfile(String userId, Source source) {
 
         counterDao.increment(userId);
         long visitCount = counterDao.getCount(userId);
@@ -68,7 +73,7 @@ public class UserService {
                     .build();
         }
 
-        UserDoc user = userCouchDao.findById(userId)
+        UserDoc user = userCouchDao.findById(userId, source)
                 .orElseThrow(() -> new RuntimeException("Пользователь с id=" + userId + " не найден в CouchDB"));
 
         CachedUserProfile toCache = CachedUserProfile.builder()
@@ -98,7 +103,7 @@ public class UserService {
     public UserProfileResponse updateUserProfile(String userId, UpdateUserRequest request, String token) {
         UserSession session = authService.getActiveSessionOrThrow(token);
 
-        UserDoc user = userCouchDao.findById(userId)
+        UserDoc user = userCouchDao.findById(userId, Source.PRIMARY)
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден в CouchDB"));
 
         if (request.getFullName() != null) user.setFullName(request.getFullName());
@@ -119,7 +124,7 @@ public class UserService {
         userCacheDao.deleteById(userId);
         actionHistoryDao.deleteByUserId(userId);
 
-        return getUserProfile(userId);
+        return getUserProfile(userId, Source.PRIMARY);
     }
 
     @Transactional

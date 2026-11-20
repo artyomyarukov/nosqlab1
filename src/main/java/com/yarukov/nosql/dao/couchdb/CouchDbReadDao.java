@@ -6,34 +6,52 @@ import org.springframework.stereotype.Repository;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.Exceptions;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 @Slf4j
 @Repository
 public class CouchDbReadDao {
 
-    private final WebClient couchClient1;
-    private final WebClient couchClient2;
-    private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
+    public enum Source { REPLICAS, PRIMARY }
 
-    public CouchDbReadDao(@Qualifier("couchDbClient1") WebClient couchClient1,
-                          @Qualifier("couchDbClient2") WebClient couchClient2) {
-        this.couchClient1 = couchClient1;
-        this.couchClient2 = couchClient2;
+    private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
+    private final WebClient primary;
+    private final List<WebClient> replicas;
+    private final AtomicInteger nextReplica = new AtomicInteger();
+
+    public CouchDbReadDao(@Qualifier("couchDbPrimary") WebClient primary,
+                          @Qualifier("couchDbReplicas") List<WebClient> replicas) {
+        this.primary = primary;
+        this.replicas = List.copyOf(replicas);
     }
 
     public <T> T read(Function<WebClient, Mono<T>> request) {
-        return Mono.defer(() -> request.apply(couchClient1))
-                .timeout(READ_TIMEOUT)
-                .onErrorResume(this::isUnavailable, error -> {
-                    log.warn("Первый узел CouchDB недоступен, читаем со второго узла");
-                    return Mono.defer(() -> request.apply(couchClient2)).timeout(READ_TIMEOUT);
-                })
-                .block();
+        return read(Source.REPLICAS, request);
+    }
+
+    public <T> T read(Source source, Function<WebClient, Mono<T>> request) {
+        if (source == Source.REPLICAS && !replicas.isEmpty()) {
+            int index = Math.floorMod(nextReplica.getAndIncrement(), replicas.size());
+            for (int attempt = 0; attempt < replicas.size(); attempt++) {
+                try {
+                    return request.apply(replicas.get(index)).timeout(READ_TIMEOUT).block();
+                } catch (RuntimeException error) {
+                    if (!isUnavailable(Exceptions.unwrap(error))) {
+                        throw error;
+                    }
+                    log.warn("Реплика CouchDB {} недоступна, пробуем следующий узел", index);
+                }
+                index = (index + 1) % replicas.size();
+            }
+        }
+        return request.apply(primary).timeout(READ_TIMEOUT).block();
     }
 
     private boolean isUnavailable(Throwable error) {

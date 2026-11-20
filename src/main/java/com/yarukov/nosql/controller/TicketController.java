@@ -1,9 +1,13 @@
 package com.yarukov.nosql.controller;
 
+import com.yarukov.nosql.dto.CreateTicketRequest;
+import com.yarukov.nosql.dto.TicketAnalyticsResponse;
+import com.yarukov.nosql.model.couchdb.TicketConflictException;
 import com.yarukov.nosql.model.couchdb.TicketDoc;
 import com.yarukov.nosql.model.couchdb.TicketTag;
 import com.yarukov.nosql.service.TicketService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import tools.jackson.databind.JsonNode;
@@ -18,11 +22,16 @@ public class TicketController {
 
     private final TicketService ticketService;
 
+    @ExceptionHandler(TicketConflictException.class)
+    public ResponseEntity<Map<String, String>> handleConflict(TicketConflictException error) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", error.getMessage()));
+    }
+
     @PostMapping
     public ResponseEntity<TicketDoc> createTicket(
-            @RequestBody TicketDoc ticket,
+            @RequestBody CreateTicketRequest request,
             @RequestHeader("X-Session-Token") String token) {
-        return ResponseEntity.ok(ticketService.createTicket(ticket, token));
+        return ResponseEntity.ok(ticketService.createTicket(request, token));
     }
 
     @GetMapping
@@ -31,8 +40,9 @@ public class TicketController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<TicketDoc> getTicket(@PathVariable String id) {
-        return ticketService.getTicket(id)
+    public ResponseEntity<TicketDoc> getTicket(@PathVariable String id,
+                                              @RequestParam(defaultValue = "false") boolean fresh) {
+        return ticketService.getTicket(id, fresh)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -41,8 +51,9 @@ public class TicketController {
     public ResponseEntity<TicketDoc> updateStatus(
             @PathVariable String id,
             @RequestParam String status,
+            @RequestParam(required = false) String rev,
             @RequestHeader("X-Session-Token") String token) {
-        return ResponseEntity.ok(ticketService.updateTicketStatus(id, status, token));
+        return ResponseEntity.ok(ticketService.updateTicketStatus(id, status, token, rev));
     }
 
     @GetMapping("/search")
@@ -62,7 +73,7 @@ public class TicketController {
     }
 
     @GetMapping("/analytics")
-    public ResponseEntity<JsonNode> getAnalytics() {
+    public ResponseEntity<TicketAnalyticsResponse> getAnalytics() {
         return ResponseEntity.ok(ticketService.getAnalytics());
     }
 
