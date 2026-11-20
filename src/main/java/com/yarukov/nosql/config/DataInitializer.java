@@ -1,5 +1,6 @@
 package com.yarukov.nosql.config;
 
+import com.yarukov.nosql.dao.couchdb.CouchDbReadDao.Source;
 import com.yarukov.nosql.dao.couchdb.TicketCrudDao;
 import com.yarukov.nosql.dao.couchdb.UserCouchDao;
 import com.yarukov.nosql.model.couchdb.AttachmentMeta;
@@ -25,7 +26,7 @@ public class DataInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        log.info("Начинаем проверку и инициализацию тестовых данных в CouchDB");
+        log.info("Подготовка начальных данных CouchDB");
 
         int addedUsers = 0;
 
@@ -51,14 +52,14 @@ public class DataInitializer implements CommandLineRunner {
             log.info("В CouchDB добавлено новых пользователей: {}", addedUsers);
         }
 
-        if (ticketCrudDao.findAll().isEmpty()) {
-            createTestTickets(ivan, anna, maxim, oleg);
-            log.info("В CouchDB добавлены тестовые обращения в поддержку (Tickets)!");
+        if (ticketCrudDao.findAll(Source.PRIMARY).isEmpty()) {
+            createInitialTickets(ivan, anna, maxim, oleg);
+            log.info("Добавлены начальные обращения в поддержку");
         }
     }
 
     private int createUserIfMissing(String username, String fullName, String phone, String deliveryAddress, String role) {
-        if (userCouchDao.findByUsername(username).isPresent()) {
+        if (userCouchDao.findByUsername(username, Source.PRIMARY).isPresent()) {
             return 0;
         }
         createUser(username, fullName, phone, deliveryAddress, role);
@@ -66,7 +67,7 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private UserDoc createUserDocIfMissing(String username, String fullName, String phone, String deliveryAddress, String role) {
-        return userCouchDao.findByUsername(username)
+        return userCouchDao.findByUsername(username, Source.PRIMARY)
                 .orElseGet(() -> createUser(username, fullName, phone, deliveryAddress, role));
     }
 
@@ -82,7 +83,7 @@ public class DataInitializer implements CommandLineRunner {
                 .build());
     }
 
-    private void createTestTickets(UserDoc ivan, UserDoc anna, UserDoc maxim, UserDoc oleg) {
+    private void createInitialTickets(UserDoc ivan, UserDoc anna, UserDoc maxim, UserDoc oleg) {
         if (ivan != null) {
             ticketCrudDao.save(TicketDoc.builder()
                     .id("ticket_" + UUID.randomUUID())

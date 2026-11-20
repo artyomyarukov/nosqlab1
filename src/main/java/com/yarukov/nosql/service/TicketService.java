@@ -1,8 +1,12 @@
 package com.yarukov.nosql.service;
 
+import com.yarukov.nosql.dao.couchdb.CouchDbReadDao.Source;
 import com.yarukov.nosql.dao.couchdb.TicketCrudDao;
 import com.yarukov.nosql.dao.couchdb.TicketQueryDao;
 import com.yarukov.nosql.dao.couchdb.UserCouchDao;
+import com.yarukov.nosql.dto.CreateTicketRequest;
+import com.yarukov.nosql.dto.TicketAnalyticsResponse;
+import com.yarukov.nosql.model.couchdb.TicketConflictException;
 import com.yarukov.nosql.model.couchdb.TicketDoc;
 import com.yarukov.nosql.model.couchdb.UserDoc;
 import lombok.RequiredArgsConstructor;
@@ -29,35 +33,43 @@ public class TicketService {
     private static final Set<String> STATUSES = Set.of("NEW", "IN_PROGRESS", "RESOLVED", "CLOSED");
 
 
-    public TicketDoc createTicket(TicketDoc ticket, String token) {
+    public TicketDoc createTicket(CreateTicketRequest request, String token) {
         authService.getActiveSessionOrThrow(token);
 
-        if (ticket.getUserId() == null || ticket.getUserId().isBlank()) {
+        if (request.userId() == null || request.userId().isBlank()) {
             throw new RuntimeException("У обращения должен быть указан пользователь");
         }
-        userCouchDao.findById(ticket.getUserId())
+        userCouchDao.findById(request.userId(), Source.PRIMARY)
                 .orElseThrow(() -> new RuntimeException("Пользователь обращения не найден в CouchDB"));
 
-        ticket.setId("ticket_" + UUID.randomUUID());
-        ticket.setRev(null);
-        ticket.setEmbeddedUser(null);
-        ticket.setStatus("NEW");
-        ticket.setChangeCount(1);
-        ticket.setCreatedAt(Instant.now());
+        TicketDoc ticket = TicketDoc.builder()
+                .id("ticket_" + UUID.randomUUID())
+                .userId(request.userId())
+                .title(request.title())
+                .description(request.description())
+                .tags(request.tags() == null ? List.of() : request.tags())
+                .attachments(request.attachments() == null ? List.of() : request.attachments())
+                .status("NEW")
+                .changeCount(1)
+                .createdAt(Instant.now())
+                .build();
 
         return ticketCrudDao.save(ticket);
     }
 
-    public TicketDoc updateTicketStatus(String ticketId, String newStatus, String token) {
+    public TicketDoc updateTicketStatus(String ticketId, String newStatus, String token, String expectedRev) {
         authService.getActiveSessionOrThrow(token);
 
         if (newStatus == null || !STATUSES.contains(newStatus)) {
             throw new RuntimeException("Недопустимый статус обращения");
         }
 
-        TicketDoc ticket = ticketCrudDao.findById(ticketId)
+        TicketDoc ticket = ticketCrudDao.findById(ticketId, Source.PRIMARY)
                 .orElseThrow(() -> new RuntimeException("Тикет не найден"));
 
+        if (expectedRev != null && !expectedRev.equals(ticket.getRev())) {
+            throw new TicketConflictException();
+        }
         if (newStatus.equals(ticket.getStatus())) {
             return ticket;
         }
@@ -71,8 +83,8 @@ public class TicketService {
         return ticketCrudDao.findAll();
     }
 
-    public Optional<TicketDoc> getTicket(String id) {
-        return ticketCrudDao.findById(id);
+    public Optional<TicketDoc> getTicket(String id, boolean fresh) {
+        return ticketCrudDao.findById(id, fresh ? Source.PRIMARY : Source.REPLICAS);
     }
 
     public List<TicketDoc> findByTags(String tag, String fromDate, int limit, int skip) {
@@ -84,7 +96,7 @@ public class TicketService {
         return ticketQueryDao.explainFindByTagsAndDate(tag, fromDate);
     }
 
-    public JsonNode getAnalytics() {
+    public TicketAnalyticsResponse getAnalytics() {
         return ticketQueryDao.getAverageChangesByStatus();
     }
 
@@ -93,7 +105,7 @@ public class TicketService {
     public String runMigration(String token) {
         authService.getActiveSessionOrThrow(token);
 
-        List<TicketDoc> allTickets = ticketCrudDao.findAll();
+        List<TicketDoc> allTickets = ticketCrudDao.findAll(Source.PRIMARY);
         int migratedCount = 0;
 
         for (TicketDoc ticket : allTickets) {
@@ -102,7 +114,7 @@ public class TicketService {
                 if (embedded.getId() == null || embedded.getId().isBlank()) {
                     throw new RuntimeException("У вложенного пользователя отсутствует ID");
                 }
-                if (userCouchDao.findById(embedded.getId()).isEmpty()) {
+                if (userCouchDao.findById(embedded.getId(), Source.PRIMARY).isEmpty()) {
                     UserDoc user = UserDoc.builder()
                             .id(embedded.getId())
                             .username(embedded.getUsername())

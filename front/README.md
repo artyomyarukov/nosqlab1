@@ -15,4 +15,4 @@ npm run dev
 VITE_API_URL=http://localhost:8081
 ```
 
-Тестовый логин: `operator1`.
+Логин для демонстрации: `operator1`.

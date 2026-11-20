@@ -62,12 +62,13 @@ function StatusBadge({ status }) {
   )
 }
 
-function ErrorNotice({ message, retry }) {
+function ErrorNotice({ message, retry, retryLabel }) {
   return (
     <div className="ticket-error" role="alert">
       <AlertCircle size={18} />
       <span>{message}</span>
-      {retry && <button className="icon-button" onClick={retry} aria-label="Повторить загрузку"><RefreshCw size={16} /></button>}
+      {retry && <button className={retryLabel ? 'button compact' : 'icon-button'} onClick={retry}
+        aria-label={retryLabel || 'Повторить загрузку'}><RefreshCw size={16} />{retryLabel}</button>}
     </div>
   )
 }
@@ -81,7 +82,7 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
   const [detail, setDetail] = useState(null)
   const [analytics, setAnalytics] = useState(null)
   const [analyticsVersion, setAnalyticsVersion] = useState(0)
-  const [detailVersion, setDetailVersion] = useState(0)
+  const [detailRefresh, setDetailRefresh] = useState(null)
   const [searchLoading, setSearchLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
   const [analyticsLoading, setAnalyticsLoading] = useState(true)
@@ -197,11 +198,14 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
     }
     const controller = new AbortController()
     setDetailLoading(true)
-    api.getTicket(selectedId, controller.signal)
+    api.getTicket(selectedId, controller.signal, detailRefresh?.id === selectedId)
       .then((data) => {
         if (controller.signal.aborted) return
         if (!data || ticketId(data) !== selectedId) throw new Error('Сервис вернул некорректное обращение')
         setDetail(data)
+        if (detailRefresh?.id === selectedId) {
+          setTickets((current) => current.map((ticket) => ticketId(ticket) === selectedId ? data : ticket))
+        }
         onConnectionChange(false)
       })
       .catch((error) => {
@@ -213,7 +217,7 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
         if (!controller.signal.aborted) setDetailLoading(false)
       })
     return () => controller.abort()
-  }, [selectedId, detailVersion, onError, onConnectionChange])
+  }, [selectedId, detailRefresh, onError, onConnectionChange])
 
   function search(event) {
     event.preventDefault()
@@ -246,7 +250,7 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
       setDetail(created)
       setCreating(false)
       showAll()
-      setDetailVersion((current) => current + 1)
+      setDetailRefresh({ id: ticketId(created) })
       setAnalyticsVersion((current) => current + 1)
       onConnectionChange(false)
       showToast('Обращение создано')
@@ -264,14 +268,18 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
     const id = selectedId
     setUpdating(true)
     try {
-      const updated = await api.updateTicketStatus(id, status, session.token)
+      const updated = await api.updateTicketStatus(id, status, session.token, detail._rev)
       if (selection.current === id) setDetail(updated)
       setTickets((current) => current.map((ticket) => ticketId(ticket) === id ? updated : ticket))
       setAnalyticsVersion((current) => current + 1)
       onConnectionChange(false)
       showToast('Статус обращения обновлён')
     } catch (error) {
-      onError(error, 'Не удалось изменить статус')
+      if (error.status === 409 && selection.current === id) {
+        setDetailError(error.message)
+      } else {
+        onError(error, 'Не удалось изменить статус')
+      }
     } finally {
       setUpdating(false)
     }
@@ -285,7 +293,7 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
       const result = await api.migrateTickets(session.token)
       showToast(typeof result === 'string' ? result : result?.message || 'Миграция завершена')
       setQuery((current) => ({ ...current }))
-      setDetailVersion((current) => current + 1)
+      setDetailRefresh({ id: selectedId })
       setAnalyticsVersion((current) => current + 1)
       onConnectionChange(false)
     } catch (error) {
@@ -440,7 +448,7 @@ export default function TicketsPanel({ session, showToast, onError, onConnection
                 onCreate={createTicket} onCancel={() => setCreating(false)}
                 onError={onError} onConnectionChange={onConnectionChange} />
             ) : detailLoading ? <Loading label="Открываем обращение" /> : detailError ? (
-              <ErrorNotice message={detailError} retry={() => setDetailVersion((current) => current + 1)} />
+              <ErrorNotice message={detailError} retryLabel="Обновить тикет" retry={() => setDetailRefresh({ id: selectedId })} />
             ) : detail ? (
               <TicketDetail ticket={detail} authorized={authorized} busy={busy || searchLoading}
                 updating={updating} onChangeStatus={changeStatus} />

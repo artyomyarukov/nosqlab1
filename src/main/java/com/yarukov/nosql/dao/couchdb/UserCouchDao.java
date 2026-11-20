@@ -1,6 +1,7 @@
 package com.yarukov.nosql.dao.couchdb;
 
 import com.yarukov.nosql.model.couchdb.UserDoc;
+import com.yarukov.nosql.dao.couchdb.CouchDbReadDao.Source;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -25,7 +26,7 @@ public class UserCouchDao {
     private ObjectMapper objectMapper;
     private static final String DB = "/users";
 
-    public UserCouchDao(@Qualifier("couchDbClient1") WebClient couchClient, CouchDbReadDao couchDbReadDao) {
+    public UserCouchDao(@Qualifier("couchDbPrimary") WebClient couchClient, CouchDbReadDao couchDbReadDao) {
         this.couchClient = couchClient;
         this.couchDbReadDao = couchDbReadDao;
     }
@@ -57,8 +58,12 @@ public class UserCouchDao {
 
 
     public Optional<UserDoc> findById(String id) {
+        return findById(id, Source.REPLICAS);
+    }
+
+    public Optional<UserDoc> findById(String id, Source source) {
         try {
-            UserDoc doc = couchDbReadDao.read(client -> client.get()
+            UserDoc doc = couchDbReadDao.read(source, client -> client.get()
                     .uri(DB + "/" + id)
                     .retrieve()
                     .bodyToMono(UserDoc.class)
@@ -93,10 +98,16 @@ public class UserCouchDao {
     }
 
     public Optional<UserDoc> findByUsername(String username) {
-        try {
-            Map<String, Object> query = Map.of("selector", Map.of("username", username));
+        return findByUsername(username, Source.REPLICAS);
+    }
 
-            JsonNode root = couchDbReadDao.read(client -> client.post()
+    public Optional<UserDoc> findByUsername(String username, Source source) {
+        try {
+            Map<String, Object> query = Map.of(
+                    "selector", Map.of("username", username),
+                    "limit", 1);
+
+            JsonNode root = couchDbReadDao.read(source, client -> client.post()
                     .uri(DB + "/_find")
                     .bodyValue(query)
                     .retrieve()

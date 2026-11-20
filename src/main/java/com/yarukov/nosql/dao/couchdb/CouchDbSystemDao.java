@@ -1,5 +1,6 @@
 package com.yarukov.nosql.dao.couchdb;
 
+import com.yarukov.nosql.config.CouchDbProperties;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -17,33 +18,36 @@ import java.util.Map;
 @Repository
 public class CouchDbSystemDao {
 
-    private final WebClient couchClient1;
+    private final WebClient primary;
+    private final CouchDbProperties properties;
 
-    public CouchDbSystemDao(@Qualifier("couchDbClient1") WebClient couchClient1) {
-        this.couchClient1 = couchClient1;
+    public CouchDbSystemDao(@Qualifier("couchDbPrimary") WebClient primary, CouchDbProperties properties) {
+        this.primary = primary;
+        this.properties = properties;
     }
 
     @PostConstruct
     public void setupDatabase() {
-        createMangoIndex();
+        createMangoIndex("tickets", TicketQueryDao.DATE_INDEX, "createdAt", TicketQueryDao.DATE_INDEX);
+        createMangoIndex("users", "username_index", "username", null);
         createMapReduceView();
         createValidationTrigger();
         startContinuousReplication();
     }
 
-    private void createMangoIndex() {
+    private void createMangoIndex(String database, String name, String field, String designDoc) {
+        Map<String, Object> index = new HashMap<>(Map.of(
+                "index", Map.of("fields", List.of(field)),
+                "name", name,
+                "type", "json"));
+        if (designDoc != null) {
+            index.put("ddoc", designDoc);
+        }
         try {
-            String indexJson = """
-                    {
-                      "index": { "fields": ["tags", "createdAt"] },
-                      "name": "tags_createdAt_index",
-                      "type": "json"
-                    }
-                    """;
-            couchClient1.post().uri("/tickets/_index").bodyValue(indexJson).retrieve().toBodilessEntity().block();
-            log.info("Mango-индекс (tags, createdAt) готов");
+            primary.post().uri("/{database}/_index", database).bodyValue(index).retrieve().toBodilessEntity().block();
+            log.info("Mango-индекс '{}' в базе '{}' готов", name, database);
         } catch (Exception e) {
-            log.debug("Mango-индекс уже существует");
+            log.warn("Не удалось подготовить Mango-индекс '{}' в базе '{}'", name, database, e);
         }
     }
 
@@ -60,7 +64,7 @@ public class CouchDbSystemDao {
                       }
                     }
                     """;
-            couchClient1.put().uri("/tickets/_design/analytics").
+            primary.put().uri("/tickets/_design/analytics").
                     bodyValue(designDoc).retrieve().toBodilessEntity().block();
             log.info("MapReduce View для аналитики готово");
         } catch (Exception e) {
@@ -77,7 +81,7 @@ public class CouchDbSystemDao {
                       "validate_doc_update": "function(newDoc, oldDoc, userCtx) { if (!newDoc.status) throw({forbidden: 'Статус тикета обязателен!'}); }"
                     }
                     """;
-            couchClient1.put().uri("/tickets/_design/validation").bodyValue(validationDoc).retrieve().toBodilessEntity().block();
+            primary.put().uri("/tickets/_design/validation").bodyValue(validationDoc).retrieve().toBodilessEntity().block();
             log.info("Система: Триггер validate_doc_update установлен");
         } catch (Exception e) {
             log.debug("Триггер валидации уже существует");
@@ -86,7 +90,7 @@ public class CouchDbSystemDao {
 
     private void startContinuousReplication() {
         try {
-            couchClient1.put().uri("/_replicator").retrieve().toBodilessEntity()
+            primary.put().uri("/_replicator").retrieve().toBodilessEntity()
                     .onErrorResume(WebClientResponseException.class, e ->
                             e.getStatusCode().value() == 412 ? Mono.empty() : Mono.error(e))
                     .block();
@@ -96,18 +100,18 @@ public class CouchDbSystemDao {
         }
 
         for (String database : List.of("users", "tickets")) {
-            configureReplication(database);
+            properties.replicas().forEach((jobSuffix, replica) -> configureReplication(database, jobSuffix, replica));
         }
     }
 
-    private void configureReplication(String database) {
-        String replicationId = database + "_replication";
-        String source = "http://admin:password@couchdb1:5984/" + database;
-        String target = "http://admin:password@couchdb2:5984/" + database;
+    private void configureReplication(String database, String jobSuffix, CouchDbProperties.Node replica) {
+        String replicationId = database + "_" + jobSuffix;
+        String source = properties.databaseUrl(properties.primary(), database);
+        String target = properties.databaseUrl(replica, database);
         String path = "/_replicator/" + replicationId;
 
         try {
-            JsonNode existing = couchClient1.get().uri(path).retrieve().bodyToMono(JsonNode.class)
+            JsonNode existing = primary.get().uri(path).retrieve().bodyToMono(JsonNode.class)
                     .onErrorResume(WebClientResponseException.NotFound.class, e -> Mono.empty())
                     .block();
 
@@ -129,10 +133,10 @@ public class CouchDbSystemDao {
                 replication.put("_rev", existing.path("_rev").asText());
             }
 
-            couchClient1.put().uri(path).bodyValue(replication).retrieve().toBodilessEntity().block();
-            log.info("Непрерывная репликация базы '{}' из couchdb1 в couchdb2 настроена", database);
+            primary.put().uri(path).bodyValue(replication).retrieve().toBodilessEntity().block();
+            log.info("Непрерывная репликация базы '{}' на реплику {} настроена", database, jobSuffix);
         } catch (Exception e) {
-            log.error("Не удалось настроить репликацию базы '{}'", database, e);
+            log.error("Не удалось настроить репликацию базы '{}' на реплику {}", database, jobSuffix, e);
         }
     }
 }

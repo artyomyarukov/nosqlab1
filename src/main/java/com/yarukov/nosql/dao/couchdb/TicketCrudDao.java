@@ -1,6 +1,8 @@
 package com.yarukov.nosql.dao.couchdb;
 
+import com.yarukov.nosql.model.couchdb.TicketConflictException;
 import com.yarukov.nosql.model.couchdb.TicketDoc;
+import com.yarukov.nosql.dao.couchdb.CouchDbReadDao.Source;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -24,7 +26,7 @@ public class TicketCrudDao {
     private ObjectMapper objectMapper;
     private static final String DB = "/tickets";
 
-    public TicketCrudDao(@Qualifier("couchDbClient1") WebClient couchClient, CouchDbReadDao couchDbReadDao) {
+    public TicketCrudDao(@Qualifier("couchDbPrimary") WebClient couchClient, CouchDbReadDao couchDbReadDao) {
         this.couchClient = couchClient;
         this.couchDbReadDao = couchDbReadDao;
     }
@@ -48,18 +50,17 @@ public class TicketCrudDao {
             }
             return ticket;
         } catch (WebClientResponseException.Conflict e) {
-            log.warn("КОНФЛИКТ ИЗМЕНЕНИЙ (409 Conflict): документ id={} был изменен другим оператором!", ticket.getId());
-            String latestRev = findById(ticket.getId())
-                    .map(TicketDoc::getRev)
-                    .orElseThrow(() -> new RuntimeException("Документ удален"));
-            ticket.setRev(latestRev);
-            return save(ticket);
+            throw new TicketConflictException(e);
         }
     }
 
     public Optional<TicketDoc> findById(String id) {
+        return findById(id, Source.REPLICAS);
+    }
+
+    public Optional<TicketDoc> findById(String id, Source source) {
         try {
-            TicketDoc doc = couchDbReadDao.read(client -> client.get()
+            TicketDoc doc = couchDbReadDao.read(source, client -> client.get()
                     .uri(DB + "/" + id)
                     .retrieve()
                     .bodyToMono(TicketDoc.class)
@@ -71,9 +72,13 @@ public class TicketCrudDao {
     }
 
     public List<TicketDoc> findAll() {
+        return findAll(Source.REPLICAS);
+    }
+
+    public List<TicketDoc> findAll(Source source) {
         List<TicketDoc> tickets = new ArrayList<>();
         try {
-            JsonNode root = couchDbReadDao.read(client -> client.get()
+            JsonNode root = couchDbReadDao.read(source, client -> client.get()
                     .uri(DB + "/_all_docs?include_docs=true")
                     .retrieve()
                     .bodyToMono(JsonNode.class));
